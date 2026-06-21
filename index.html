@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DTW → Tokyo Fare Watch</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    :root { color-scheme: dark; --bg:#08111f; --card:#111c2e; --muted:#91a4c0; --text:#eef5ff; --line:#20304a; --accent:#67e8f9; --good:#34d399; --warn:#fbbf24; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top left, #132a45 0, var(--bg) 35%, #050912 100%); color:var(--text); }
+    main { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:36px 0 48px; }
+    header { display:flex; gap:20px; align-items:flex-start; justify-content:space-between; margin-bottom:24px; }
+    h1 { margin:0 0 8px; font-size:clamp(30px, 6vw, 58px); letter-spacing:-0.05em; }
+    .sub { color:var(--muted); line-height:1.5; max-width:780px; }
+    .pill { border:1px solid #2f4568; background:#0b1728cc; border-radius:999px; padding:8px 12px; color:var(--accent); font-weight:700; white-space:nowrap; }
+    .grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:14px; margin:22px 0; }
+    .card { background:linear-gradient(180deg, #13213acc, #0e1727dd); border:1px solid var(--line); border-radius:20px; padding:18px; box-shadow:0 18px 55px #0007; }
+    .metric { color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.08em; }
+    .value { font-size:clamp(24px, 4vw, 38px); font-weight:800; margin-top:8px; letter-spacing:-.04em; }
+    .value.small { font-size:20px; letter-spacing:0; }
+    .chart-card { padding:20px; margin:16px 0; }
+    canvas { width:100%; min-height:420px; }
+    table { width:100%; border-collapse:collapse; overflow:hidden; border-radius:16px; }
+    th, td { border-bottom:1px solid var(--line); padding:12px 10px; text-align:left; font-size:14px; }
+    th { color:var(--muted); font-weight:700; font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
+    td.price { font-weight:800; color:var(--accent); }
+    a { color:var(--accent); }
+    footer { margin-top:22px; color:var(--muted); font-size:13px; line-height:1.55; }
+    .status { display:inline-flex; align-items:center; gap:8px; }
+    .dot { width:10px; height:10px; border-radius:50%; background:var(--warn); box-shadow:0 0 18px var(--warn); }
+    @media (max-width: 820px) { header { display:block; } .pill { display:inline-block; margin-top:14px; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 520px) { main { width:min(100% - 20px, 1120px); padding-top:24px; } .grid { grid-template-columns:1fr; } th:nth-child(4),td:nth-child(4),th:nth-child(5),td:nth-child(5){ display:none; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>DTW → Tokyo Fare Watch</h1>
+      <div class="sub" id="subtitle">Loading fare history…</div>
+    </div>
+    <div class="pill">GitHub Pages dashboard</div>
+  </header>
+
+  <section class="grid">
+    <div class="card"><div class="metric">Current best total</div><div class="value" id="currentFare">—</div></div>
+    <div class="card"><div class="metric">Lowest observed</div><div class="value" id="lowestFare">—</div></div>
+    <div class="card"><div class="metric">Observations</div><div class="value" id="observations">—</div></div>
+    <div class="card"><div class="metric">Last checked</div><div class="value small" id="lastChecked">—</div></div>
+  </section>
+
+  <section class="card chart-card">
+    <canvas id="fareChart" aria-label="Fare history chart"></canvas>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-top:0">Latest checks</h2>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>Checked</th><th>Fare</th><th>Carrier</th><th>Airport</th><th>Band</th><th>Duration</th></tr></thead>
+        <tbody id="recentRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+<script>
+const money = n => Number.isFinite(n) ? '$' + Math.round(n).toLocaleString() : '—';
+const fmtDate = s => s ? new Date(s).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }) : '—';
+const shortDate = s => s ? new Date(s).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric' }) : '—';
+
+async function main() {
+  const res = await fetch('data/state.json', { cache: 'no-store' });
+  const state = await res.json();
+  const watch = state.watch || {};
+  const stats = state.stats || {};
+  const obs = state.observations || [];
+  const latest = obs[obs.length - 1] || {};
+  const dates = watch.dates || {};
+  document.getElementById('subtitle').textContent = `${watch.origin || 'DTW'} ⇄ ${latest.airport || watch.preferred_airport || 'HND'} nonstop/direct · ${dates.depart || '—'} → ${dates.return || '—'} · ${watch.adults || 2} adults · ${watch.seat || 'economy'}`;
+  document.getElementById('currentFare').textContent = money(stats.current_price_total_usd);
+  document.getElementById('lowestFare').textContent = money(stats.best_price_total_usd);
+  document.getElementById('observations').textContent = String(stats.observation_count ?? obs.length);
+  document.getElementById('lastChecked').textContent = fmtDate(stats.last_checked_at);
+
+  const ctx = document.getElementById('fareChart');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: obs.map(o => shortDate(o.checked_at)),
+      datasets: [{ label: 'Best total fare (USD)', data: obs.map(o => o.price_total_usd), borderColor:'#67e8f9', backgroundColor:'rgba(103,232,249,.14)', pointBackgroundColor:'#eef5ff', tension:.25, fill:true }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{ color:'#eef5ff' }}, tooltip:{ callbacks:{ label: c => money(c.raw) }}}, scales:{ x:{ ticks:{ color:'#91a4c0' }, grid:{ color:'rgba(145,164,192,.13)' }}, y:{ ticks:{ color:'#91a4c0', callback:v => money(v) }, grid:{ color:'rgba(145,164,192,.13)' }} } }
+  });
+
+  const rows = obs.slice(-12).reverse().map(o => `<tr><td>${fmtDate(o.checked_at)}</td><td class="price">${money(o.price_total_usd)}</td><td>${o.carrier || '—'}</td><td>${o.airport || '—'}</td><td>${o.google_price_band || '—'}</td><td>${o.duration || '—'}</td></tr>`).join('');
+  document.getElementById('recentRows').innerHTML = rows || '<tr><td colspan="6">No observations yet.</td></tr>';
+  const source = latest.source_url || state.source_url;
+  document.getElementById('footer').innerHTML = `<span class="status"><span class="dot"></span> ${state.status || 'tracking'}.</span><br>Generated at ${fmtDate(state.generated_at)}. Source: Google Flights via fast-flights. ${source ? `<a href="${source}">Open fare search</a>.` : ''}<br>Search URL is not a booking link. Prices and availability can change. No booking or purchase action is taken by this watcher.`;
+}
+main().catch(err => {
+  document.getElementById('subtitle').textContent = 'Dashboard data failed to load: ' + err;
+});
+</script>
+</body>
+</html>
