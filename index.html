@@ -3,105 +3,300 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
   <title>DTW → Tokyo Fare Watch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <style>
-    :root { color-scheme: dark; --bg:#08111f; --card:#111c2e; --muted:#91a4c0; --text:#eef5ff; --line:#20304a; --accent:#67e8f9; --good:#34d399; --warn:#fbbf24; }
+    :root {
+      color-scheme: dark;
+      --bg: #07080b;
+      --bg-2: #0c0d12;
+      --panel: rgba(255,255,255,.035);
+      --panel-strong: rgba(255,255,255,.06);
+      --line: rgba(255,255,255,.085);
+      --line-soft: rgba(255,255,255,.052);
+      --text: #f7f8f8;
+      --muted: #9aa0aa;
+      --faint: #666b76;
+      --accent: #7c7aff;
+      --accent-2: #67e8f9;
+      --good: #25d695;
+      --warn: #f4bf50;
+      --bad: #fb7185;
+      --shadow: 0 24px 100px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.04);
+    }
     * { box-sizing: border-box; }
-    body { margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top left, #132a45 0, var(--bg) 35%, #050912 100%); color:var(--text); }
-    main { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:36px 0 48px; }
-    header { display:flex; gap:20px; align-items:flex-start; justify-content:space-between; margin-bottom:24px; }
-    h1 { margin:0 0 8px; font-size:clamp(30px, 6vw, 58px); letter-spacing:-0.05em; }
-    .sub { color:var(--muted); line-height:1.5; max-width:780px; }
-    .pill { border:1px solid #2f4568; background:#0b1728cc; border-radius:999px; padding:8px 12px; color:var(--accent); font-weight:700; white-space:nowrap; }
-    .grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:14px; margin:22px 0; }
-    .card { background:linear-gradient(180deg, #13213acc, #0e1727dd); border:1px solid var(--line); border-radius:20px; padding:18px; box-shadow:0 18px 55px #0007; }
-    .metric { color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.08em; }
-    .value { font-size:clamp(24px, 4vw, 38px); font-weight:800; margin-top:8px; letter-spacing:-.04em; }
-    .value.small { font-size:20px; letter-spacing:0; }
-    .chart-card { padding:20px; margin:16px 0; }
-    canvas { width:100%; min-height:420px; }
-    table { width:100%; border-collapse:collapse; overflow:hidden; border-radius:16px; }
-    th, td { border-bottom:1px solid var(--line); padding:12px 10px; text-align:left; font-size:14px; }
-    th { color:var(--muted); font-weight:700; font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
-    td.price { font-weight:800; color:var(--accent); }
-    a { color:var(--accent); }
-    footer { margin-top:22px; color:var(--muted); font-size:13px; line-height:1.55; }
-    .status { display:inline-flex; align-items:center; gap:8px; }
-    .dot { width:10px; height:10px; border-radius:50%; background:var(--warn); box-shadow:0 0 18px var(--warn); }
-    @media (max-width: 820px) { header { display:block; } .pill { display:inline-block; margin-top:14px; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 520px) { main { width:min(100% - 20px, 1120px); padding-top:24px; } .grid { grid-template-columns:1fr; } th:nth-child(4),td:nth-child(4),th:nth-child(5),td:nth-child(5){ display:none; } }
+    html { background: var(--bg); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      font-feature-settings: "cv01", "ss03";
+      background:
+        radial-gradient(900px 580px at 18% -4%, rgba(124,122,255,.28), transparent 62%),
+        radial-gradient(780px 520px at 86% 10%, rgba(103,232,249,.16), transparent 58%),
+        linear-gradient(180deg, #090a0f 0%, #07080b 48%, #040508 100%);
+      color: var(--text);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: linear-gradient(to bottom, black, transparent 70%);
+    }
+    a { color: inherit; text-decoration: none; }
+    main { width: min(1180px, calc(100% - 36px)); margin: 0 auto; padding: 30px 0 46px; position: relative; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 10px 0 34px;
+    }
+    .brand { display:flex; align-items:center; gap:12px; color:#d9dcff; font-weight:600; letter-spacing:-.02em; }
+    .mark {
+      width:34px; height:34px; border-radius:10px; display:grid; place-items:center;
+      background: linear-gradient(135deg, rgba(124,122,255,.95), rgba(103,232,249,.72));
+      box-shadow: 0 0 42px rgba(124,122,255,.32);
+      color:#05060a; font-weight:800;
+    }
+    .nav-pills { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+    .pill, .button-link {
+      display:inline-flex; align-items:center; gap:8px; min-height:34px;
+      padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px;
+      background: rgba(255,255,255,.025); color:#d0d6e0; font-size: 13px; font-weight: 500;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+    }
+    .button-link { color:#f7f8f8; background: linear-gradient(180deg, rgba(124,122,255,.22), rgba(124,122,255,.09)); }
+    .dot { width:8px; height:8px; border-radius:999px; background:var(--warn); box-shadow:0 0 18px currentColor; color:var(--warn); }
+    .dot.good { background:var(--good); color:var(--good); }
+    .hero {
+      display:grid; grid-template-columns: minmax(0, 1.15fr) minmax(310px, .85fr); gap: 18px; align-items: stretch;
+      margin-bottom: 18px;
+    }
+    .hero-card, .panel {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.058), rgba(255,255,255,.026));
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      overflow: hidden;
+    }
+    .hero-card { padding: 34px; position: relative; min-height: 360px; }
+    .hero-card::after {
+      content:""; position:absolute; right:-120px; top:-150px; width:360px; height:360px; border-radius:999px;
+      background: radial-gradient(circle, rgba(124,122,255,.34), transparent 63%); filter: blur(4px);
+    }
+    .eyebrow { color: var(--accent-2); font: 500 12px/1 'JetBrains Mono', ui-monospace, monospace; letter-spacing: .11em; text-transform: uppercase; }
+    h1 { margin: 16px 0 16px; max-width: 760px; font-size: clamp(42px, 7vw, 82px); line-height: .93; letter-spacing: -0.07em; font-weight: 600; }
+    .sub { max-width: 760px; color: #b9bfcc; font-size: clamp(16px, 2vw, 19px); line-height: 1.65; letter-spacing: -.015em; }
+    .hero-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:28px; position:relative; z-index:1; }
+    .primary-action, .ghost-action {
+      display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:42px;
+      padding: 10px 15px; border-radius: 12px; border:1px solid var(--line); font-weight:600; font-size:14px;
+    }
+    .primary-action { background:#5e6ad2; color:white; border-color:rgba(255,255,255,.13); box-shadow: 0 16px 42px rgba(94,106,210,.32); }
+    .ghost-action { background:rgba(255,255,255,.035); color:#d0d6e0; }
+    .summary-panel { padding: 18px; display:grid; gap: 12px; }
+    .mini-map {
+      min-height: 174px; border-radius: 20px; border: 1px solid var(--line-soft);
+      background:
+        radial-gradient(circle at 18% 70%, rgba(103,232,249,.5) 0 5px, transparent 6px),
+        radial-gradient(circle at 77% 28%, rgba(124,122,255,.8) 0 5px, transparent 6px),
+        linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.018));
+      position:relative; overflow:hidden;
+    }
+    .mini-map::before { content:""; position:absolute; inset:48% 20% auto 20%; height:1px; background:linear-gradient(90deg, rgba(103,232,249,.8), rgba(124,122,255,.8)); transform:rotate(-18deg); box-shadow:0 0 22px rgba(124,122,255,.7); }
+    .city { position:absolute; font:500 12px/1 'JetBrains Mono', ui-monospace, monospace; color:#e7e9ff; }
+    .city.dtw { left:22px; bottom:34px; } .city.hnd { right:22px; top:34px; }
+    .metric-grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+    .metric-card { padding: 17px; border-radius: 20px; border:1px solid var(--line); background:var(--panel); box-shadow: inset 0 1px 0 rgba(255,255,255,.035); }
+    .metric-label { color:var(--muted); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; }
+    .metric-value { margin-top:8px; font-size: clamp(25px, 3.5vw, 40px); line-height:1; letter-spacing:-.055em; font-weight:650; }
+    .metric-note { margin-top:10px; color:var(--faint); font-size:12px; line-height:1.35; }
+    .positive { color:var(--good); } .warning { color:var(--warn); } .accent { color:var(--accent-2); }
+    .dashboard-grid { display:grid; grid-template-columns: minmax(0, 1.4fr) minmax(310px, .6fr); gap: 18px; align-items:start; }
+    .panel { padding: 20px; }
+    .panel-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:16px; }
+    h2 { margin:0; font-size:20px; line-height:1.2; letter-spacing:-.03em; font-weight:600; }
+    .panel-copy { color:var(--muted); margin:6px 0 0; font-size:13px; line-height:1.45; }
+    .chart-wrap { height: 430px; }
+    canvas { width:100%; height:100%; }
+    .insight-list { display:grid; gap:10px; }
+    .insight {
+      padding: 14px; border-radius:16px; border:1px solid var(--line-soft); background:rgba(255,255,255,.026);
+    }
+    .insight strong { display:block; font-size:14px; margin-bottom:5px; }
+    .insight span { color:var(--muted); font-size:13px; line-height:1.45; }
+    .table-panel { margin-top:18px; }
+    .table-wrap { overflow:auto; border:1px solid var(--line-soft); border-radius:18px; }
+    table { width:100%; border-collapse:collapse; min-width: 760px; }
+    th, td { padding:13px 14px; border-bottom:1px solid var(--line-soft); text-align:left; font-size:13px; white-space:nowrap; }
+    th { color:var(--faint); font:600 11px/1 'JetBrains Mono', ui-monospace, monospace; text-transform:uppercase; letter-spacing:.09em; background:rgba(255,255,255,.025); position:sticky; top:0; }
+    tr:last-child td { border-bottom:0; }
+    tbody tr:hover { background:rgba(255,255,255,.028); }
+    .price { color:var(--accent-2); font-weight:700; font-size:14px; }
+    .badge { display:inline-flex; align-items:center; gap:6px; padding:5px 8px; border-radius:999px; border:1px solid var(--line-soft); color:#d0d6e0; background:rgba(255,255,255,.024); font-size:12px; }
+    .badge.high { color:#ffd58a; border-color:rgba(244,191,80,.24); background:rgba(244,191,80,.08); }
+    .badge.low { color:#9af4cf; border-color:rgba(37,214,149,.24); background:rgba(37,214,149,.08); }
+    footer { color:var(--muted); font-size:12px; line-height:1.6; padding: 22px 2px 0; }
+    footer a { color:#cfd2ff; text-decoration:underline; text-decoration-color:rgba(207,210,255,.35); text-underline-offset:3px; }
+    .empty, .error { color:var(--muted); padding:20px; border:1px solid var(--line); border-radius:18px; background:var(--panel); }
+    @media (max-width: 950px) { .hero, .dashboard-grid { grid-template-columns: 1fr; } .metric-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    @media (max-width: 560px) { main { width:min(100% - 22px, 1180px); padding-top:18px; } .topbar { align-items:flex-start; flex-direction:column; padding-bottom:22px; } .hero-card { padding:24px; min-height: auto; } .metric-grid { grid-template-columns:1fr; } .chart-wrap { height: 340px; } .panel { padding:15px; border-radius:22px; } }
   </style>
 </head>
 <body>
 <main>
-  <header>
-    <div>
-      <h1>DTW → Tokyo Fare Watch</h1>
-      <div class="sub" id="subtitle">Loading fare history…</div>
+  <nav class="topbar">
+    <div class="brand"><div class="mark">旅</div><span>Japan Trip Fare Desk</span></div>
+    <div class="nav-pills">
+      <span class="pill"><span class="dot" id="statusDot"></span><span id="statusText">Loading</span></span>
+      <a class="button-link" id="sourceTop" href="#" target="_blank" rel="noopener">Open fare search ↗</a>
     </div>
-    <div class="pill">GitHub Pages dashboard</div>
-  </header>
+  </nav>
 
-  <section class="grid">
-    <div class="card"><div class="metric">Current best total</div><div class="value" id="currentFare">—</div></div>
-    <div class="card"><div class="metric">Lowest observed</div><div class="value" id="lowestFare">—</div></div>
-    <div class="card"><div class="metric">Observations</div><div class="value" id="observations">—</div></div>
-    <div class="card"><div class="metric">Last checked</div><div class="value small" id="lastChecked">—</div></div>
+  <section class="hero">
+    <div class="hero-card">
+      <div class="eyebrow">DTW ⇄ Tokyo · nonstop/direct · 2 adults · economy</div>
+      <h1>Flight cost tracker for Tokyo.</h1>
+      <p class="sub" id="subtitle">Loading fare history…</p>
+      <div class="hero-actions">
+        <a class="primary-action" id="sourceHero" href="#" target="_blank" rel="noopener">Check live search ↗</a>
+        <span class="ghost-action" id="routeChip">Nov 20 → Nov 29, 2026</span>
+      </div>
+    </div>
+    <aside class="hero-card summary-panel">
+      <div class="mini-map" aria-hidden="true"><span class="city dtw">DTW</span><span class="city hnd">HND/TYO</span></div>
+      <div class="insight-list">
+        <div class="insight"><strong id="latestCarrier">Carrier —</strong><span id="latestDetail">Latest nonstop/direct candidate.</span></div>
+        <div class="insight"><strong id="alertPosture">Alert posture — tracking</strong><span>Neutral summaries every run; strong alert only on material drop or good fare.</span></div>
+      </div>
+    </aside>
   </section>
 
-  <section class="card chart-card">
-    <canvas id="fareChart" aria-label="Fare history chart"></canvas>
+  <section class="metric-grid" aria-label="fare metrics">
+    <div class="metric-card"><div class="metric-label">Current best total</div><div class="metric-value accent" id="currentFare">—</div><div class="metric-note" id="currentNote">Latest observed price.</div></div>
+    <div class="metric-card"><div class="metric-label">Lowest observed</div><div class="metric-value" id="lowestFare">—</div><div class="metric-note" id="lowestNote">Since watcher baseline.</div></div>
+    <div class="metric-card"><div class="metric-label">Good-fare target</div><div class="metric-value positive" id="targetFare">$3,000</div><div class="metric-note" id="targetNote">Alert if at or below target / low band.</div></div>
+    <div class="metric-card"><div class="metric-label">Observations</div><div class="metric-value" id="observations">—</div><div class="metric-note" id="lastChecked">Last checked —</div></div>
   </section>
 
-  <section class="card">
-    <h2 style="margin-top:0">Latest checks</h2>
-    <div style="overflow:auto">
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-head">
+        <div><h2>Price history</h2><p class="panel-copy">Best returned total fare per watcher run. Flat line means the backend kept returning the same fare.</p></div>
+        <span class="badge" id="bandBadge">band —</span>
+      </div>
+      <div class="chart-wrap"><canvas id="fareChart" aria-label="Fare history line chart"></canvas></div>
+    </article>
+    <aside class="panel">
+      <div class="panel-head"><div><h2>Readout</h2><p class="panel-copy">Current route assumptions and signal interpretation.</p></div></div>
+      <div class="insight-list">
+        <div class="insight"><strong>Route</strong><span id="routeReadout">—</span></div>
+        <div class="insight"><strong>Drop status</strong><span id="dropReadout">—</span></div>
+        <div class="insight"><strong>Caveat</strong><span>Search URL is not a booking link. Prices and availability can change. No booking or purchase action is taken.</span></div>
+      </div>
+    </aside>
+  </section>
+
+  <section class="panel table-panel">
+    <div class="panel-head"><div><h2>Observation table</h2><p class="panel-copy">Every persisted fare check, newest first.</p></div></div>
+    <div class="table-wrap">
       <table>
-        <thead><tr><th>Checked</th><th>Fare</th><th>Carrier</th><th>Airport</th><th>Band</th><th>Duration</th></tr></thead>
-        <tbody id="recentRows"></tbody>
+        <thead><tr><th>Checked</th><th>Total fare</th><th>Carrier</th><th>Airport</th><th>Band</th><th>Duration</th><th>Signal</th></tr></thead>
+        <tbody id="recentRows"><tr><td colspan="7">Loading…</td></tr></tbody>
       </table>
     </div>
   </section>
-
   <footer id="footer"></footer>
 </main>
 <script>
-const money = n => Number.isFinite(n) ? '$' + Math.round(n).toLocaleString() : '—';
+const GOOD_FARE_TOTAL = 3000;
+const money = n => Number.isFinite(Number(n)) ? '$' + Math.round(Number(n)).toLocaleString() : '—';
 const fmtDate = s => s ? new Date(s).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }) : '—';
 const shortDate = s => s ? new Date(s).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric' }) : '—';
-
+const pct = n => Number.isFinite(Number(n)) ? `${Number(n).toFixed(1)}%` : '—';
+function setHref(id, url) { const el = document.getElementById(id); if (!url) { el.style.display = 'none'; return; } el.href = url; }
+function bandClass(band) { const b = String(band || '').toLowerCase(); return b.includes('low') ? 'low' : b.includes('high') ? 'high' : ''; }
+function signalLabel(o) { if (o.alert) return 'alert'; if (o.material_price_drop) return 'material drop'; if (o.price_dropped) return 'down'; if (o.materially_good_fare) return 'good fare'; return 'watching'; }
+function latestDropText(obs) {
+  if (obs.length < 2) return 'Baseline only — no previous observation to compare.';
+  const latest = obs[obs.length - 1], prev = obs[obs.length - 2];
+  const diff = Number(latest.price_total_usd) - Number(prev.price_total_usd);
+  if (diff === 0) return `No change from prior check (${money(latest.price_total_usd)}).`;
+  if (diff < 0) return `Down ${money(Math.abs(diff))} from prior check.`;
+  return `Up ${money(diff)} from prior check.`;
+}
 async function main() {
   const res = await fetch('data/state.json', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`data/state.json HTTP ${res.status}`);
   const state = await res.json();
   const watch = state.watch || {};
   const stats = state.stats || {};
-  const obs = state.observations || [];
+  const obs = (state.observations || []).filter(o => Number.isFinite(Number(o.price_total_usd)));
   const latest = obs[obs.length - 1] || {};
   const dates = watch.dates || {};
-  document.getElementById('subtitle').textContent = `${watch.origin || 'DTW'} ⇄ ${latest.airport || watch.preferred_airport || 'HND'} nonstop/direct · ${dates.depart || '—'} → ${dates.return || '—'} · ${watch.adults || 2} adults · ${watch.seat || 'economy'}`;
+  const source = latest.source_url || state.source_url;
+  setHref('sourceTop', source); setHref('sourceHero', source);
+  const route = `${watch.origin || 'DTW'} ⇄ ${latest.airport || stats.last_airport || watch.preferred_airport || 'HND'} nonstop/direct · ${dates.depart || '—'} → ${dates.return || '—'} · ${watch.adults || 2} adults · ${watch.seat || 'economy'}`;
+  document.getElementById('subtitle').textContent = route;
+  document.getElementById('routeReadout').textContent = route;
+  document.getElementById('routeChip').textContent = `${dates.depart || '—'} → ${dates.return || '—'}`;
   document.getElementById('currentFare').textContent = money(stats.current_price_total_usd);
   document.getElementById('lowestFare').textContent = money(stats.best_price_total_usd);
+  document.getElementById('targetFare').textContent = money(GOOD_FARE_TOTAL);
+  const deltaToTarget = Number(stats.current_price_total_usd) - GOOD_FARE_TOTAL;
+  document.getElementById('targetNote').textContent = deltaToTarget > 0 ? `${money(deltaToTarget)} above target.` : 'At or below target.';
   document.getElementById('observations').textContent = String(stats.observation_count ?? obs.length);
-  document.getElementById('lastChecked').textContent = fmtDate(stats.last_checked_at);
-
+  document.getElementById('lastChecked').textContent = `Last checked ${fmtDate(stats.last_checked_at)}`;
+  document.getElementById('currentNote').textContent = `${latest.carrier || stats.last_carrier || 'Unknown carrier'} · ${latest.duration || 'duration unknown'}`;
+  document.getElementById('lowestNote').textContent = stats.best_observed_at ? `Observed ${fmtDate(stats.best_observed_at)}` : 'Since watcher baseline.';
+  document.getElementById('latestCarrier').textContent = `${latest.carrier || stats.last_carrier || 'Carrier unknown'} · ${latest.airport || stats.last_airport || 'Tokyo'}`;
+  document.getElementById('latestDetail').textContent = `${latest.departure || 'Departure unknown'} → ${latest.arrival || 'arrival unknown'} · ${latest.duration || 'duration unknown'}`;
+  const statusGood = Number(stats.consecutive_errors || 0) === 0;
+  document.getElementById('statusDot').className = 'dot' + (statusGood ? ' good' : '');
+  document.getElementById('statusText').textContent = statusGood ? 'Tracking live' : `${stats.consecutive_errors} backend error(s)`;
+  const band = latest.google_price_band || stats.last_google_price_band || 'unknown';
+  const bandBadge = document.getElementById('bandBadge');
+  bandBadge.textContent = `Google band · ${band}`;
+  bandBadge.className = `badge ${bandClass(band)}`;
+  document.getElementById('dropReadout').textContent = latestDropText(obs);
+  if (!obs.length) {
+    document.getElementById('recentRows').innerHTML = '<tr><td colspan="7">No observations yet.</td></tr>';
+    document.getElementById('footer').textContent = 'No fare observations available yet.';
+    return;
+  }
+  const labels = obs.map(o => shortDate(o.checked_at));
+  const prices = obs.map(o => Number(o.price_total_usd));
+  const bestLine = prices.map(() => Number(stats.best_price_total_usd));
+  const targetLine = prices.map(() => GOOD_FARE_TOTAL);
   const ctx = document.getElementById('fareChart');
   new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: obs.map(o => shortDate(o.checked_at)),
-      datasets: [{ label: 'Best total fare (USD)', data: obs.map(o => o.price_total_usd), borderColor:'#67e8f9', backgroundColor:'rgba(103,232,249,.14)', pointBackgroundColor:'#eef5ff', tension:.25, fill:true }]
-    },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{ color:'#eef5ff' }}, tooltip:{ callbacks:{ label: c => money(c.raw) }}}, scales:{ x:{ ticks:{ color:'#91a4c0' }, grid:{ color:'rgba(145,164,192,.13)' }}, y:{ ticks:{ color:'#91a4c0', callback:v => money(v) }, grid:{ color:'rgba(145,164,192,.13)' }} } }
+    data: { labels, datasets: [
+      { label: 'Observed fare', data: prices, borderColor:'#67e8f9', backgroundColor:'rgba(103,232,249,.15)', pointBackgroundColor:'#f7f8f8', pointBorderColor:'#67e8f9', pointRadius:4, pointHoverRadius:6, tension:.28, fill:true, borderWidth:3 },
+      { label: 'Lowest observed', data: bestLine, borderColor:'#25d695', borderDash:[5,5], pointRadius:0, tension:0, borderWidth:1.5 },
+      { label: 'Good-fare target', data: targetLine, borderColor:'#7c7aff', borderDash:[2,6], pointRadius:0, tension:0, borderWidth:1.5 }
+    ]},
+    options: {
+      responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
+      plugins:{ legend:{ labels:{ color:'#d0d6e0', boxWidth:12, boxHeight:12, usePointStyle:true }}, tooltip:{ backgroundColor:'#191a1b', borderColor:'rgba(255,255,255,.12)', borderWidth:1, titleColor:'#f7f8f8', bodyColor:'#d0d6e0', callbacks:{ label: c => `${c.dataset.label}: ${money(c.raw)}` }}},
+      scales:{ x:{ ticks:{ color:'#8a8f98', maxRotation:0, autoSkip:true }, grid:{ color:'rgba(255,255,255,.045)' }}, y:{ ticks:{ color:'#8a8f98', callback:v => money(v) }, grid:{ color:'rgba(255,255,255,.06)' }, suggestedMin: Math.max(0, Math.min(...prices, GOOD_FARE_TOTAL) - 400), suggestedMax: Math.max(...prices, GOOD_FARE_TOTAL) + 400 } }
+    }
   });
-
-  const rows = obs.slice(-12).reverse().map(o => `<tr><td>${fmtDate(o.checked_at)}</td><td class="price">${money(o.price_total_usd)}</td><td>${o.carrier || '—'}</td><td>${o.airport || '—'}</td><td>${o.google_price_band || '—'}</td><td>${o.duration || '—'}</td></tr>`).join('');
-  document.getElementById('recentRows').innerHTML = rows || '<tr><td colspan="6">No observations yet.</td></tr>';
-  const source = latest.source_url || state.source_url;
-  document.getElementById('footer').innerHTML = `<span class="status"><span class="dot"></span> ${state.status || 'tracking'}.</span><br>Generated at ${fmtDate(state.generated_at)}. Source: Google Flights via fast-flights. ${source ? `<a href="${source}">Open fare search</a>.` : ''}<br>Search URL is not a booking link. Prices and availability can change. No booking or purchase action is taken by this watcher.`;
+  document.getElementById('recentRows').innerHTML = obs.slice().reverse().map(o => {
+    const b = o.google_price_band || '—';
+    return `<tr><td>${fmtDate(o.checked_at)}</td><td class="price">${money(o.price_total_usd)}</td><td>${o.carrier || '—'}</td><td>${o.airport || '—'}</td><td><span class="badge ${bandClass(b)}">${b}</span></td><td>${o.duration || '—'}</td><td>${signalLabel(o)}</td></tr>`;
+  }).join('');
+  document.getElementById('footer').innerHTML = `Generated ${fmtDate(state.generated_at)} from persisted fare-watch history. Source: Google Flights via fast-flights. ${source ? `<a href="${source}" target="_blank" rel="noopener">Open fare search</a>.` : ''}<br>${(state.caveats || []).join(' · ')}.`;
 }
 main().catch(err => {
-  document.getElementById('subtitle').textContent = 'Dashboard data failed to load: ' + err;
+  document.getElementById('subtitle').innerHTML = `<span class="error">Dashboard data failed to load: ${err.message || err}</span>`;
+  document.getElementById('recentRows').innerHTML = '<tr><td colspan="7">Dashboard data failed to load.</td></tr>';
 });
 </script>
 </body>
