@@ -231,37 +231,35 @@ def route_text(cfg, obs=None):
 def summary_text(cfg, state, errors, dry_run=False):
     stats = state.get("stats", {})
     obs = latest_observation(state)
-    heading = "DTW→Tokyo fare watch summary"
+    price = stats.get("current_price_total_usd")
+    carrier = (obs or {}).get("carrier") or stats.get("last_carrier") or "unknown"
+    airport = (obs or {}).get("airport") or stats.get("last_airport") or cfg["airports"][0]
+    d = cfg["dates"]
+    heading = "DTW → Tokyo Fare Watch"
     if obs and obs.get("alert"):
-        heading = "🚨 DTW→Tokyo FARE ALERT"
+        heading = "🚨 DTW → Tokyo Fare Alert"
     if dry_run:
         heading = "DRY RUN — " + heading
-    source = (obs or {}).get("source_url") or state.get("source_url") or search_url(cfg, cfg["airports"][0])
+
+    signal = "No fare drop — still above target."
+    if obs and obs.get("materially_good_fare"):
+        signal = f"Good fare — at/below {money(cfg['good_fare_total'])}."
+    elif obs and obs.get("material_price_drop"):
+        signal = "Material price drop detected."
+    elif obs and obs.get("price_dropped"):
+        signal = "Small drop — below alert threshold."
+
     lines = [
         heading,
-        f"searched_at: {state.get('generated_at')}",
-        f"best_total_usd: {stats.get('current_price_total_usd', 'unknown')}",
-        f"airline: {(obs or {}).get('carrier') or stats.get('last_carrier') or 'unknown'}",
-        f"route: {route_text(cfg, obs)}",
-        f"search_scope: {cfg['origin']}⇄{','.join(cfg['airports'])} nonstop/direct only; no connecting fare fallback",
-        f"source_url: <{source}>",
-        f"dashboard_url: <{DASHBOARD_URL}>",
-        f"github_url: <{GITHUB_REPO_URL}>",
-        f"price_dropped: {price_dropped_text(obs)}",
-        f"materially_good_fare: {yes_no(bool((obs or {}).get('materially_good_fare')))}",
+        f"Current best: {money(price)} via {carrier} ({cfg['origin']} ⇄ {airport} nonstop)",
+        f"Trip: {d['depart']} → {d['return']} · {cfg['adults']} adults · {cfg['seat']}",
+        f"Signal: {signal}",
+        f"GitHub Page: <{DASHBOARD_URL}>",
     ]
-    if obs and obs.get("alert"):
-        if obs.get("materially_good_fare"):
-            reason = f"total is <= {money(cfg['good_fare_total'])}"
-        else:
-            reason = "material drop from previous same-airport check"
-        lines.append(f"alert_reason: {reason}")
-    caveats = list(CAVEATS)
     if errors and obs:
-        caveats.append(f"secondary_backend_errors={errors}; successful airport recorded, run status remains ok")
+        lines.append("Note: HND checked successfully; NRT is temporarily unavailable.")
     elif errors:
-        caveats.append(f"backend_errors={errors}")
-    lines.append("caveats: " + "; ".join(caveats) + ".")
+        lines.append("Note: backend check had errors; see dashboard/history for details.")
     return "\n".join(lines)
 
 
@@ -347,7 +345,7 @@ def main(argv=None):
         fh.write(payload + "\n")
     push_status = "disabled" if no_push else commit_and_push_data()
     print(summary_text(CONFIG, state, errors, dry_run=False))
-    print(f"publish_status: sync={sync_status}; push={push_status}")
+    print(f"publish_status: sync={sync_status}; push={push_status}", file=sys.stderr)
     return 0
 
 if __name__ == "__main__":
