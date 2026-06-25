@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
   <title>DTW → Tokyo Fare Watch</title>
+  <meta name="description" content="Live fare tracker for nonstop/direct DTW ⇄ Tokyo (HND) economy flights — price history, good-fare target, and every observed fare check." />
+  <meta name="theme-color" content="#07080b" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="DTW → Tokyo Fare Watch" />
+  <meta property="og:description" content="Live fare tracker for nonstop/direct DTW ⇄ Tokyo (HND) economy flights — price history, good-fare target, and every observed fare check." />
+  <meta property="og:url" content="https://vishutdhar.github.io/dtw-tokyo-fare-watch/" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="DTW → Tokyo Fare Watch" />
+  <meta name="twitter:description" content="Live fare tracker for nonstop/direct DTW ⇄ Tokyo (HND) economy flights." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%237c7aff'/%3E%3Ctext x='50' y='50' font-size='56' font-family='sans-serif' font-weight='800' fill='%2305060a' text-anchor='middle' dominant-baseline='central'%3E%E6%97%85%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -19,8 +29,8 @@
       --line: rgba(255,255,255,.085);
       --line-soft: rgba(255,255,255,.052);
       --text: #f7f8f8;
-      --muted: #9aa0aa;
-      --faint: #666b76;
+      --muted: #a6acb6;
+      --faint: #8b919c;
       --accent: #7c7aff;
       --accent-2: #67e8f9;
       --good: #25d695;
@@ -101,17 +111,42 @@
     .primary-action { background:#5e6ad2; color:white; border-color:rgba(255,255,255,.13); box-shadow: 0 16px 42px rgba(94,106,210,.32); }
     .ghost-action { background:rgba(255,255,255,.035); color:#d0d6e0; }
     .summary-panel { padding: 18px; display:grid; gap: 12px; }
-    .mini-map {
-      min-height: 174px; border-radius: 20px; border: 1px solid var(--line-soft);
-      background:
-        radial-gradient(circle at 18% 70%, rgba(103,232,249,.5) 0 5px, transparent 6px),
-        radial-gradient(circle at 77% 28%, rgba(124,122,255,.8) 0 5px, transparent 6px),
-        linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.018));
-      position:relative; overflow:hidden;
+    .route-map {
+      position:relative; border-radius:20px; border:1px solid var(--line-soft);
+      background: linear-gradient(135deg, rgba(255,255,255,.05), rgba(255,255,255,.015));
+      overflow:hidden;
     }
-    .mini-map::before { content:""; position:absolute; inset:48% 20% auto 20%; height:1px; background:linear-gradient(90deg, rgba(103,232,249,.8), rgba(124,122,255,.8)); transform:rotate(-18deg); box-shadow:0 0 22px rgba(124,122,255,.7); }
-    .city { position:absolute; font:500 12px/1 'JetBrains Mono', ui-monospace, monospace; color:#e7e9ff; }
-    .city.dtw { left:22px; bottom:34px; } .city.hnd { right:22px; top:34px; }
+    .route-map svg { display:block; width:100%; height:auto; }
+    .route-arc { fill:none; stroke:url(#routeGrad); stroke-width:2; stroke-linecap:round; stroke-dasharray:5 6; animation: dash 1.6s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset:-22; } }
+    .route-node circle { fill:#0a0b10; stroke-width:2.5; }
+    .route-node.dtw circle { stroke:#67e8f9; }
+    .route-node.hnd circle { stroke:#7c7aff; }
+    .route-node .halo { fill:none; opacity:.5; }
+    .route-label { font:600 11px/1 'JetBrains Mono', ui-monospace, monospace; fill:#e7e9ff; letter-spacing:.04em; }
+    .route-plane { fill:#f7f8f8; }
+    .route-meta { display:flex; flex-wrap:wrap; gap:10px 18px; padding:12px 4px 2px; }
+    .route-meta div { display:grid; gap:2px; }
+    .route-meta .k { font:600 10px/1 'JetBrains Mono', ui-monospace, monospace; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); }
+    .route-meta .v { font-size:14px; font-weight:600; letter-spacing:-.02em; }
+    .countdown-pill {
+      display:inline-flex; align-items:center; gap:8px; padding:7px 12px; border-radius:999px;
+      border:1px solid rgba(103,232,249,.22); background:rgba(103,232,249,.08); color:#9beef9;
+      font:600 12px/1 'JetBrains Mono', ui-monospace, monospace; letter-spacing:.02em; align-self:flex-start;
+    }
+    /* skeleton loading */
+    .skeleton { position:relative; color:transparent !important; border-radius:8px; background:rgba(255,255,255,.06); overflow:hidden; }
+    .skeleton::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent); transform:translateX(-100%); animation:shimmer 1.3s infinite; }
+    @keyframes shimmer { to { transform:translateX(100%); } }
+    .metric-value.skeleton { min-height:36px; min-width:90px; display:inline-block; }
+    .chart-skeleton { position:absolute; inset:0; border-radius:16px; background:rgba(255,255,255,.04); overflow:hidden; }
+    .chart-skeleton::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); transform:translateX(-100%); animation:shimmer 1.3s infinite; }
+    .chart-wrap { position:relative; }
+    /* metric trend chips */
+    .metric-trend { display:inline-flex; align-items:center; gap:5px; margin-top:10px; padding:3px 8px; border-radius:999px; font-size:12px; font-weight:600; border:1px solid var(--line-soft); background:rgba(255,255,255,.03); color:var(--muted); }
+    .metric-trend.up { color:#ffb4b4; border-color:rgba(251,113,133,.28); background:rgba(251,113,133,.08); }
+    .metric-trend.down { color:#9af4cf; border-color:rgba(37,214,149,.26); background:rgba(37,214,149,.08); }
+    .metric-trend.flat { color:var(--faint); }
     .metric-grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
     .metric-card { padding: 17px; border-radius: 20px; border:1px solid var(--line); background:var(--panel); box-shadow: inset 0 1px 0 rgba(255,255,255,.035); }
     .metric-label { color:var(--muted); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; }
@@ -146,7 +181,25 @@
     footer a { color:#cfd2ff; text-decoration:underline; text-decoration-color:rgba(207,210,255,.35); text-underline-offset:3px; }
     .empty, .error { color:var(--muted); padding:20px; border:1px solid var(--line); border-radius:18px; background:var(--panel); }
     @media (max-width: 950px) { .hero, .dashboard-grid { grid-template-columns: 1fr; } .metric-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-    @media (max-width: 560px) { main { width:min(100% - 22px, 1180px); padding-top:18px; } .topbar { align-items:flex-start; flex-direction:column; padding-bottom:22px; } .hero-card { padding:24px; min-height: auto; } .metric-grid { grid-template-columns:1fr; } .chart-wrap { height: 340px; } .panel { padding:15px; border-radius:22px; } }
+    @media (max-width: 560px) {
+      main { width:min(100% - 22px, 1180px); padding-top:18px; }
+      .topbar { align-items:flex-start; flex-direction:column; padding-bottom:22px; }
+      .hero-card { padding:24px; min-height: auto; } .metric-grid { grid-template-columns:1fr; }
+      .chart-wrap { height: 340px; } .panel { padding:15px; border-radius:22px; }
+      /* table → cards */
+      .table-wrap { border:0; overflow:visible; }
+      table { min-width:0; }
+      thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+      tbody tr { display:block; border:1px solid var(--line-soft); border-radius:16px; background:rgba(255,255,255,.026); padding:6px 4px; margin-bottom:12px; }
+      tbody tr:hover { background:rgba(255,255,255,.04); }
+      td { display:flex; justify-content:space-between; align-items:center; gap:14px; border-bottom:1px solid var(--line-soft); white-space:normal; text-align:right; }
+      tr:last-child td:last-child, td:last-child { border-bottom:0; }
+      td::before { content:attr(data-label); color:var(--faint); font:600 11px/1 'JetBrains Mono', ui-monospace, monospace; text-transform:uppercase; letter-spacing:.08em; text-align:left; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; }
+      .route-arc { stroke-dasharray:none; }
+    }
   </style>
 </head>
 <body>
@@ -154,7 +207,7 @@
   <nav class="topbar">
     <div class="brand"><div class="mark">旅</div><span>Japan Trip Fare Desk</span></div>
     <div class="nav-pills">
-      <span class="pill"><span class="dot" id="statusDot"></span><span id="statusText">Loading</span></span>
+      <span class="pill" aria-live="polite"><span class="dot" id="statusDot"></span><span id="statusText">Loading</span></span>
       <a class="button-link" id="sourceTop" href="#" target="_blank" rel="noopener">Open fare search ↗</a>
     </div>
   </nav>
@@ -170,19 +223,40 @@
       </div>
     </div>
     <aside class="hero-card summary-panel">
-      <div class="mini-map" aria-hidden="true"><span class="city dtw">DTW</span><span class="city hnd">HND/TYO</span></div>
+      <div class="route-map" role="img" aria-label="Great-circle route from Detroit to Tokyo">
+        <svg viewBox="0 0 320 150" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <linearGradient id="routeGrad" x1="0" y1="1" x2="1" y2="0">
+              <stop offset="0" stop-color="#67e8f9"/><stop offset="1" stop-color="#7c7aff"/>
+            </linearGradient>
+            <radialGradient id="haloCyan"><stop offset="0" stop-color="#67e8f9" stop-opacity=".6"/><stop offset="1" stop-color="#67e8f9" stop-opacity="0"/></radialGradient>
+            <radialGradient id="haloViolet"><stop offset="0" stop-color="#7c7aff" stop-opacity=".6"/><stop offset="1" stop-color="#7c7aff" stop-opacity="0"/></radialGradient>
+          </defs>
+          <path class="route-arc" d="M 46 116 Q 160 6 274 44" />
+          <g class="route-node dtw"><circle class="halo" cx="46" cy="116" r="13" fill="url(#haloCyan)"/><circle cx="46" cy="116" r="5.5"/></g>
+          <g class="route-node hnd"><circle class="halo" cx="274" cy="44" r="13" fill="url(#haloViolet)"/><circle cx="274" cy="44" r="5.5"/></g>
+          <text class="route-label" x="46" y="138" text-anchor="middle">DTW</text>
+          <text class="route-label" x="274" y="30" text-anchor="middle" id="mapDest">HND</text>
+          <g class="route-plane" id="mapPlane"><path d="M0 0 L13 4.5 L0 9 L3 4.5 Z"/></g>
+        </svg>
+      </div>
+      <div class="route-meta">
+        <div><span class="k">Distance</span><span class="v" id="routeDistance">—</span></div>
+        <div><span class="k">Flight time</span><span class="v" id="routeFlightTime">—</span></div>
+        <div><span class="k">Carrier</span><span class="v" id="latestCarrier">—</span></div>
+      </div>
+      <span class="countdown-pill" id="countdown" hidden>✈ — days to departure</span>
       <div class="insight-list">
-        <div class="insight"><strong id="latestCarrier">Carrier —</strong><span id="latestDetail">Latest nonstop/direct candidate.</span></div>
-        <div class="insight"><strong id="alertPosture">Alert posture — tracking</strong><span>Neutral summaries every run; strong alert only on material drop or good fare.</span></div>
+        <div class="insight"><strong id="latestRoute">Latest candidate</strong><span id="latestDetail">Latest nonstop/direct candidate.</span></div>
       </div>
     </aside>
   </section>
 
   <section class="metric-grid" aria-label="fare metrics">
-    <div class="metric-card"><div class="metric-label">Current best total</div><div class="metric-value accent" id="currentFare">—</div><div class="metric-note" id="currentNote">Latest observed price.</div></div>
-    <div class="metric-card"><div class="metric-label">Lowest observed</div><div class="metric-value" id="lowestFare">—</div><div class="metric-note" id="lowestNote">Since watcher baseline.</div></div>
-    <div class="metric-card"><div class="metric-label">Good-fare target</div><div class="metric-value positive" id="targetFare">$3,000</div><div class="metric-note" id="targetNote">Alert if at or below target / low band.</div></div>
-    <div class="metric-card"><div class="metric-label">Observations</div><div class="metric-value" id="observations">—</div><div class="metric-note" id="lastChecked">Last checked —</div></div>
+    <div class="metric-card"><div class="metric-label">Current best total</div><div class="metric-value accent skeleton" id="currentFare">—</div><div class="metric-trend flat" id="currentTrend" hidden></div><div class="metric-note" id="currentNote">Latest observed price.</div></div>
+    <div class="metric-card"><div class="metric-label">Lowest observed</div><div class="metric-value skeleton" id="lowestFare">—</div><div class="metric-trend flat" id="lowestTrend" hidden></div><div class="metric-note" id="lowestNote">Since watcher baseline.</div></div>
+    <div class="metric-card"><div class="metric-label">Good-fare target</div><div class="metric-value positive" id="targetFare">$3,000</div><div class="metric-trend flat" id="targetTrend" hidden></div><div class="metric-note" id="targetNote">Alert if at or below target / low band.</div></div>
+    <div class="metric-card"><div class="metric-label">Observations</div><div class="metric-value skeleton" id="observations">—</div><div class="metric-trend flat" id="obsTrend" hidden></div><div class="metric-note" id="lastChecked">Last checked —</div></div>
   </section>
 
   <section class="dashboard-grid">
@@ -191,7 +265,7 @@
         <div><h2>Price history</h2><p class="panel-copy">Best returned total fare per watcher run. Flat line means the backend kept returning the same fare.</p></div>
         <span class="badge" id="bandBadge">band —</span>
       </div>
-      <div class="chart-wrap"><canvas id="fareChart" aria-label="Fare history line chart"></canvas></div>
+      <div class="chart-wrap"><div class="chart-skeleton" id="chartSkeleton"></div><canvas id="fareChart" aria-label="Fare history line chart"></canvas></div>
     </article>
     <aside class="panel">
       <div class="panel-head"><div><h2>Readout</h2><p class="panel-copy">Current route assumptions and signal interpretation.</p></div></div>
@@ -221,6 +295,52 @@ const fmtDate = s => s ? new Date(s).toLocaleString(undefined, { dateStyle:'medi
 const shortDate = s => s ? new Date(s).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric' }) : '—';
 const pct = n => Number.isFinite(Number(n)) ? `${Number(n).toFixed(1)}%` : '—';
 function setHref(id, url) { const el = document.getElementById(id); if (!url) { el.style.display = 'none'; return; } el.href = url; }
+function unskeleton(id) { document.getElementById(id).classList.remove('skeleton'); }
+function timeAgo(s) {
+  if (!s) return '';
+  const diff = Date.now() - new Date(s).getTime();
+  if (!Number.isFinite(diff)) return '';
+  const m = Math.round(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const target = new Date(dateStr + 'T00:00:00');
+  if (Number.isNaN(target.getTime())) return null;
+  return Math.ceil((target.getTime() - Date.now()) / 86400000);
+}
+// Airport coordinates for great-circle distance (extend as routes change)
+const AIRPORTS = { DTW:[42.2124,-83.3534], HND:[35.5494,139.7798], NRT:[35.7720,140.3929], TYO:[35.6762,139.6503] };
+function greatCircleMiles(a, b) {
+  const A = AIRPORTS[a], B = AIRPORTS[b];
+  if (!A || !B) return null;
+  const R = 3958.8, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(B[0]-A[0]), dLon = toRad(B[1]-A[1]);
+  const s = Math.sin(dLat/2)**2 + Math.cos(toRad(A[0]))*Math.cos(toRad(B[0]))*Math.sin(dLon/2)**2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s)));
+}
+// Quadratic-bezier point + tangent angle, to seat the plane glyph on the arc
+function placePlane(t) {
+  const P0=[46,116], P1=[160,6], P2=[274,44];
+  const x = (1-t)**2*P0[0] + 2*(1-t)*t*P1[0] + t*t*P2[0];
+  const y = (1-t)**2*P0[1] + 2*(1-t)*t*P1[1] + t*t*P2[1];
+  const dx = 2*(1-t)*(P1[0]-P0[0]) + 2*t*(P2[0]-P1[0]);
+  const dy = 2*(1-t)*(P1[1]-P0[1]) + 2*t*(P2[1]-P1[1]);
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  const plane = document.getElementById('mapPlane');
+  if (plane) plane.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${angle.toFixed(1)}) translate(-6 -4.5)`);
+}
+function setTrend(id, dir, text) {
+  const el = document.getElementById(id);
+  el.className = `metric-trend ${dir}`;
+  const arrow = dir === 'down' ? '▼' : dir === 'up' ? '▲' : '•';
+  el.textContent = `${arrow} ${text}`;
+  el.hidden = false;
+}
 function bandClass(band) { const b = String(band || '').toLowerCase(); return b.includes('low') ? 'low' : b.includes('high') ? 'high' : ''; }
 function signalLabel(o) { if (o.alert) return 'alert'; if (o.material_price_drop) return 'material drop'; if (o.price_dropped) return 'down'; if (o.materially_good_fare) return 'good fare'; return 'watching'; }
 function latestDropText(obs) {
@@ -243,19 +363,49 @@ async function main() {
   const source = latest.source_url || state.source_url;
   setHref('sourceTop', source); setHref('sourceHero', source);
   const route = `${watch.origin || 'DTW'} ⇄ ${latest.airport || stats.last_airport || watch.preferred_airport || 'HND'} nonstop/direct · ${dates.depart || '—'} → ${dates.return || '—'} · ${watch.adults || 2} adults · ${watch.seat || 'economy'}`;
+  const destAirport = latest.airport || stats.last_airport || watch.preferred_airport || 'HND';
   document.getElementById('subtitle').textContent = route;
   document.getElementById('routeReadout').textContent = route;
   document.getElementById('routeChip').textContent = `${dates.depart || '—'} → ${dates.return || '—'}`;
-  document.getElementById('currentFare').textContent = money(stats.current_price_total_usd);
-  document.getElementById('lowestFare').textContent = money(stats.best_price_total_usd);
+
+  const current = Number(stats.current_price_total_usd);
+  const lowest = Number(stats.best_price_total_usd);
+  document.getElementById('currentFare').textContent = money(current); unskeleton('currentFare');
+  document.getElementById('lowestFare').textContent = money(lowest); unskeleton('lowestFare');
   document.getElementById('targetFare').textContent = money(GOOD_FARE_TOTAL);
-  const deltaToTarget = Number(stats.current_price_total_usd) - GOOD_FARE_TOTAL;
-  document.getElementById('targetNote').textContent = deltaToTarget > 0 ? `${money(deltaToTarget)} above target.` : 'At or below target.';
-  document.getElementById('observations').textContent = String(stats.observation_count ?? obs.length);
-  document.getElementById('lastChecked').textContent = `Last checked ${fmtDate(stats.last_checked_at)}`;
+  document.getElementById('observations').textContent = String(stats.observation_count ?? obs.length); unskeleton('observations');
+  document.getElementById('lastChecked').textContent = `Last checked ${fmtDate(stats.last_checked_at)}${timeAgo(stats.last_checked_at) ? ` · ${timeAgo(stats.last_checked_at)}` : ''}`;
   document.getElementById('currentNote').textContent = `${latest.carrier || stats.last_carrier || 'Unknown carrier'} · ${latest.duration || 'duration unknown'}`;
   document.getElementById('lowestNote').textContent = stats.best_observed_at ? `Observed ${fmtDate(stats.best_observed_at)}` : 'Since watcher baseline.';
-  document.getElementById('latestCarrier').textContent = `${latest.carrier || stats.last_carrier || 'Carrier unknown'} · ${latest.airport || stats.last_airport || 'Tokyo'}`;
+
+  // Metric trends (lower fare is good → down = green)
+  if (obs.length >= 2) {
+    const diff = current - Number(obs[obs.length - 2].price_total_usd);
+    if (diff < 0) setTrend('currentTrend', 'down', `${money(Math.abs(diff))} vs prior check`);
+    else if (diff > 0) setTrend('currentTrend', 'up', `${money(diff)} vs prior check`);
+    else setTrend('currentTrend', 'flat', 'unchanged vs prior check');
+  }
+  const aboveLowest = current - lowest;
+  setTrend('lowestTrend', aboveLowest > 0 ? 'up' : 'flat', aboveLowest > 0 ? `${money(aboveLowest)} above current` : 'current matches lowest');
+  const deltaToTarget = current - GOOD_FARE_TOTAL;
+  document.getElementById('targetNote').textContent = deltaToTarget > 0 ? `${money(deltaToTarget)} above target.` : 'At or below target.';
+  if (Number.isFinite(deltaToTarget)) {
+    const pctOver = (deltaToTarget / GOOD_FARE_TOTAL) * 100;
+    if (deltaToTarget > 0) setTrend('targetTrend', 'up', `${money(deltaToTarget)} (${pct(pctOver)}) over`);
+    else setTrend('targetTrend', 'down', 'at or below target');
+  }
+  const days = daysUntil(dates.depart);
+  if (days != null && days >= 0) setTrend('obsTrend', 'flat', `${days} days to departure`);
+
+  // Route map
+  const destLabel = document.getElementById('mapDest'); if (destLabel) destLabel.textContent = destAirport;
+  const miles = greatCircleMiles(watch.origin || 'DTW', destAirport);
+  document.getElementById('routeDistance').textContent = miles ? `${miles.toLocaleString()} mi` : '—';
+  document.getElementById('routeFlightTime').textContent = latest.duration || stats.last_duration || '—';
+  document.getElementById('latestCarrier').textContent = latest.carrier || stats.last_carrier || 'Unknown';
+  placePlane(0.5);
+  if (days != null && days >= 0) { const cd = document.getElementById('countdown'); cd.textContent = `✈ ${days} days to departure`; cd.hidden = false; }
+  document.getElementById('latestRoute').textContent = `${watch.origin || 'DTW'} → ${destAirport} · ${latest.carrier || stats.last_carrier || 'carrier unknown'}`;
   document.getElementById('latestDetail').textContent = `${latest.departure || 'Departure unknown'} → ${latest.arrival || 'arrival unknown'} · ${latest.duration || 'duration unknown'}`;
   const statusGood = Number(stats.consecutive_errors || 0) === 0;
   document.getElementById('statusDot').className = 'dot' + (statusGood ? ' good' : '');
@@ -265,7 +415,9 @@ async function main() {
   bandBadge.textContent = `Google band · ${band}`;
   bandBadge.className = `badge ${bandClass(band)}`;
   document.getElementById('dropReadout').textContent = latestDropText(obs);
+  const chartSkeleton = document.getElementById('chartSkeleton');
   if (!obs.length) {
+    if (chartSkeleton) chartSkeleton.style.display = 'none';
     document.getElementById('recentRows').innerHTML = '<tr><td colspan="7">No observations yet.</td></tr>';
     document.getElementById('footer').textContent = 'No fare observations available yet.';
     return;
@@ -274,13 +426,16 @@ async function main() {
   const prices = obs.map(o => Number(o.price_total_usd));
   const bestLine = prices.map(() => Number(stats.best_price_total_usd));
   const targetLine = prices.map(() => GOOD_FARE_TOTAL);
+  // Only mark points where the fare actually changed, so a held fare reads as a held line, not noise
+  const changePoints = prices.map((p, i) => (i === 0 || p !== prices[i - 1] || i === prices.length - 1) ? 4 : 0);
+  if (chartSkeleton) chartSkeleton.style.display = 'none';
   const ctx = document.getElementById('fareChart');
   new Chart(ctx, {
     type: 'line',
     data: { labels, datasets: [
-      { label: 'Observed fare', data: prices, borderColor:'#67e8f9', backgroundColor:'rgba(103,232,249,.15)', pointBackgroundColor:'#f7f8f8', pointBorderColor:'#67e8f9', pointRadius:4, pointHoverRadius:6, tension:.28, fill:true, borderWidth:3 },
+      { label: 'Observed fare', data: prices, borderColor:'#67e8f9', backgroundColor:'rgba(103,232,249,.12)', pointBackgroundColor:'#f7f8f8', pointBorderColor:'#67e8f9', pointRadius:changePoints, pointHoverRadius:6, tension:.18, fill:true, borderWidth:3 },
       { label: 'Lowest observed', data: bestLine, borderColor:'#25d695', borderDash:[5,5], pointRadius:0, tension:0, borderWidth:1.5 },
-      { label: 'Good-fare target', data: targetLine, borderColor:'#7c7aff', borderDash:[2,6], pointRadius:0, tension:0, borderWidth:1.5 }
+      { label: 'Good-fare target', data: targetLine, borderColor:'#7c7aff', backgroundColor:'rgba(124,122,255,.07)', borderDash:[2,6], pointRadius:0, tension:0, borderWidth:1.5, fill:'start' }
     ]},
     options: {
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
@@ -290,11 +445,14 @@ async function main() {
   });
   document.getElementById('recentRows').innerHTML = obs.slice().reverse().map(o => {
     const b = o.google_price_band || '—';
-    return `<tr><td>${fmtDate(o.checked_at)}</td><td class="price">${money(o.price_total_usd)}</td><td>${o.carrier || '—'}</td><td>${o.airport || '—'}</td><td><span class="badge ${bandClass(b)}">${b}</span></td><td>${o.duration || '—'}</td><td>${signalLabel(o)}</td></tr>`;
+    return `<tr><td data-label="Checked">${fmtDate(o.checked_at)}</td><td data-label="Total fare" class="price">${money(o.price_total_usd)}</td><td data-label="Carrier">${o.carrier || '—'}</td><td data-label="Airport">${o.airport || '—'}</td><td data-label="Band"><span class="badge ${bandClass(b)}">${b}</span></td><td data-label="Duration">${o.duration || '—'}</td><td data-label="Signal">${signalLabel(o)}</td></tr>`;
   }).join('');
-  document.getElementById('footer').innerHTML = `Generated ${fmtDate(state.generated_at)} from persisted fare-watch history. Source: Google Flights via fast-flights. ${source ? `<a href="${source}" target="_blank" rel="noopener">Open fare search</a>.` : ''}<br>${(state.caveats || []).join(' · ')}.`;
+  const genAgo = timeAgo(state.generated_at);
+  document.getElementById('footer').innerHTML = `Generated ${fmtDate(state.generated_at)}${genAgo ? ` (${genAgo})` : ''} from persisted fare-watch history. Source: Google Flights via fast-flights. ${source ? `<a href="${source}" target="_blank" rel="noopener">Open fare search</a>.` : ''}<br>${(state.caveats || []).join(' · ')}.`;
 }
 main().catch(err => {
+  ['currentFare','lowestFare','observations'].forEach(id => { const el = document.getElementById(id); if (el) { el.classList.remove('skeleton'); el.textContent = '—'; } });
+  const cs = document.getElementById('chartSkeleton'); if (cs) cs.style.display = 'none';
   document.getElementById('subtitle').innerHTML = `<span class="error">Dashboard data failed to load: ${err.message || err}</span>`;
   document.getElementById('recentRows').innerHTML = '<tr><td colspan="7">Dashboard data failed to load.</td></tr>';
 });
