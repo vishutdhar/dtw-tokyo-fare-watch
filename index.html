@@ -430,6 +430,9 @@ async function main() {
   // Only mark points where the fare actually changed, so a held fare reads as a held line, not noise
   const changePoints = prices.map((p, i) => (i === 0 || p !== prices[i - 1] || i === prices.length - 1) ? 4 : 0);
   if (chartSkeleton) chartSkeleton.style.display = 'none';
+  // Isolate chart rendering: a Chart.js failure (e.g. blocked CDN) must not
+  // discard the already-loaded metrics, table, or footer.
+  try {
   const ctx = document.getElementById('fareChart');
   new Chart(ctx, {
     type: 'line',
@@ -444,6 +447,10 @@ async function main() {
       scales:{ x:{ ticks:{ color:'#8a8f98', maxRotation:0, autoSkip:true }, grid:{ color:'rgba(255,255,255,.045)' }}, y:{ ticks:{ color:'#8a8f98', callback:v => money(v) }, grid:{ color:'rgba(255,255,255,.06)' }, suggestedMin: Math.max(0, Math.min(...prices, GOOD_FARE_TOTAL) - 400), suggestedMax: Math.max(...prices, GOOD_FARE_TOTAL) + 400 } }
     }
   });
+  } catch (chartErr) {
+    const wrap = document.querySelector('.chart-wrap');
+    if (wrap) wrap.innerHTML = `<div class="error">Chart unavailable: ${chartErr.message || chartErr}</div>`;
+  }
   document.getElementById('recentRows').innerHTML = obs.slice().reverse().map(o => {
     const b = o.google_price_band || '—';
     return `<tr><td data-label="Checked">${fmtDate(o.checked_at)}</td><td data-label="Total fare" class="price">${money(o.price_total_usd)}</td><td data-label="Carrier">${o.carrier || '—'}</td><td data-label="Airport">${o.airport || '—'}</td><td data-label="Band"><span class="badge ${bandClass(b)}">${b}</span></td><td data-label="Duration">${o.duration || '—'}</td><td data-label="Signal">${signalLabel(o)}</td></tr>`;
@@ -452,10 +459,13 @@ async function main() {
   document.getElementById('footer').innerHTML = `Generated ${fmtDate(state.generated_at)}${genAgo ? ` (${genAgo})` : ''} from persisted fare-watch history. Source: Google Flights via fast-flights. ${source ? `<a href="${source}" target="_blank" rel="noopener">Open fare search</a>.` : ''}<br>${(state.caveats || []).join(' · ')}.`;
 }
 main().catch(err => {
-  ['currentFare','lowestFare','observations'].forEach(id => { const el = document.getElementById(id); if (el) { el.classList.remove('skeleton'); el.textContent = '—'; } });
+  // Only clear metrics that never loaded; never overwrite already-populated values.
+  ['currentFare','lowestFare','observations'].forEach(id => { const el = document.getElementById(id); if (el && el.classList.contains('skeleton')) { el.classList.remove('skeleton'); el.textContent = '—'; } });
   const cs = document.getElementById('chartSkeleton'); if (cs) cs.style.display = 'none';
   document.getElementById('subtitle').innerHTML = `<span class="error">Dashboard data failed to load: ${err.message || err}</span>`;
-  document.getElementById('recentRows').innerHTML = '<tr><td colspan="7">Dashboard data failed to load.</td></tr>';
+  if (document.getElementById('recentRows').children.length === 0 || !document.querySelector('#recentRows td.price')) {
+    document.getElementById('recentRows').innerHTML = '<tr><td colspan="7">Dashboard data failed to load.</td></tr>';
+  }
 });
 </script>
 </body>
