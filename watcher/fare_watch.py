@@ -211,11 +211,14 @@ def run(cfg, prior, now_iso):
             "missing_required": sorted(missing_required), "degraded": degraded}
     return state, new_obs, info
 
-def summarize(cfg, state):
+def summarize(cfg, state, now_iso=None):
     """Concise, Discord-ready summary lines for the cron caller to forward.
 
     Neutral status every run; a strong ALERT line only on a material drop or a
-    good fare (mirrors the existing Hermes posture)."""
+    good fare (mirrors the existing Hermes posture). Alerts fire ONLY on fresh
+    rows from the current run (`now_iso`); an all-failure run that recorded no
+    new fares never re-sends a stale alert. With `now_iso` omitted the function
+    re-prints the current state (e.g. --summary-only) and shows its alert."""
     stats = state.get("stats", {})
     o, d = cfg["origin"], cfg["dates"]
     lines = [f"{o} ⇄ Tokyo {d['depart']} → {d['return']} · "
@@ -225,7 +228,9 @@ def summarize(cfg, state):
         lines.append("No priced nonstop results yet.")
         return lines
     latest_ts = max(x["checked_at"] for x in valid)
-    run_obs = sorted((x for x in valid if x["checked_at"] == latest_ts), key=lambda x: x["price_total_usd"])
+    has_fresh = any(x["checked_at"] == now_iso for x in valid) if now_iso is not None else False
+    report_ts = now_iso if has_fresh else latest_ts
+    run_obs = sorted((x for x in valid if x["checked_at"] == report_ts), key=lambda x: x["price_total_usd"])
     per = " · ".join(f"{x['airport']} ${x['price_total_usd']:,} ({x.get('google_price_band') or '-'})"
                           for x in run_obs)
     cur, best = stats.get("current_price_total_usd"), stats.get("best_price_total_usd")
@@ -235,13 +240,16 @@ def summarize(cfg, state):
         delta = cur - gft
         tail = f"${delta:,} over target" if delta > 0 else "at/below target ✅"
         lines.append(f"lowest observed ${best:,} · target ${gft:,} ({tail})")
-    flagged = [x for x in run_obs if x.get("alert")]
-    if flagged:
-        f = flagged[0]
-        why = []
-        if f.get("materially_good_fare"): why.append("good fare")
-        if f.get("material_price_drop"): why.append("material drop")
-        lines.append(f"\U0001f6a8 ALERT {f['airport']} ${f['price_total_usd']:,} — {' & '.join(why)}")
+    if now_iso is None or has_fresh:                 # only alert on fresh rows (or a manual re-print)
+        flagged = [x for x in run_obs if x.get("alert")]
+        if flagged:
+            f = flagged[0]
+            why = []
+            if f.get("materially_good_fare"): why.append("good fare")
+            if f.get("material_price_drop"): why.append("material drop")
+            lines.append(f"\U0001f6a8 ALERT {f['airport']} ${f['price_total_usd']:,} — {' & '.join(why)}")
+    elif now_iso is not None:
+        lines.append(f"⚠️ no fresh fares this run; showing last recorded {latest_ts}")
     if state.get("status") == "degraded":
         lines.append(f"⚠️ degraded run (consecutive_errors={stats.get('consecutive_errors')})")
     return lines
@@ -284,7 +292,7 @@ def main(argv=None):
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     state, new_obs, info = run(CONFIG, prior, now_iso)
     payload = json.dumps(state, indent=2, sort_keys=True)
-    summary = summarize(CONFIG, state)
+    summary = summarize(CONFIG, state, now_iso)   # alerts gated to this run's fresh rows
     if dry_run:
         print(payload)
         print("\n--- summary (cron/Discord) ---", file=sys.stderr)
