@@ -12,6 +12,12 @@ STATE_PATH = os.path.join(REPO_ROOT, "data", "state.json")
 cfg = fw.CONFIG
 
 
+def with_airports(*airports):
+    c = dict(cfg)
+    c["airports"] = list(airports)
+    return c
+
+
 class MockFlight:
     def __init__(self, name, price, dep="d", arr="a", dur="13 hr 45 min", stops=0):
         self.name, self.price = name, price
@@ -70,16 +76,22 @@ def test_material_drop_requires_100_usd_and_5_percent():
     assert obs[-1]["alert"] is True
 
 
-def test_nonstop_skip_is_not_an_error():
-    """No nonstop result for an airport -> skipped, not counted as a backend error."""
+def test_config_is_hnd_only_for_live_nonstop_watch():
+    assert cfg["nonstop_direct_only"] is True
+    assert cfg["airports"] == ["HND"]
+
+
+def test_nonstop_skip_is_not_an_error_for_configured_airports():
+    """No nonstop result for a configured airport -> skipped, not counted as a backend error."""
+    two_airport_cfg = with_airports("HND", "TEST")
     def fake_search(c, airport, now):
-        if airport == "NRT":
+        if airport == "TEST":
             return None  # simulate no nonstop/direct priced result
         return fw.build_observation(c, airport, MockFlight("Delta", "$4,031"), "high", now)
     orig = fw.search_airport
     fw.search_airport = fake_search
     try:
-        state, new_obs, errors = fw.run(cfg, {"observations": []}, "2026-06-25T14:00:00+00:00")
+        state, new_obs, errors = fw.run(two_airport_cfg, {"observations": []}, "2026-06-25T14:00:00+00:00")
     finally:
         fw.search_airport = orig
     assert [o["airport"] for o in new_obs] == ["HND"]
@@ -87,11 +99,10 @@ def test_nonstop_skip_is_not_an_error():
     assert state["stats"]["last_airport"] == "HND"
 
 
-def test_secondary_airport_backend_error_with_hnd_success_is_ok_not_degraded():
-    """NRT backend failure should not degrade a successful HND run."""
+def test_hnd_only_config_does_not_query_nrt():
+    called = []
     def fake_search(c, airport, now):
-        if airport == "NRT":
-            raise RuntimeError('401 Result: {"error":"no token provided"}')
+        called.append(airport)
         return fw.build_observation(c, airport, MockFlight("Delta", "$4,031"), "high", now)
     orig = fw.search_airport
     fw.search_airport = fake_search
@@ -99,10 +110,10 @@ def test_secondary_airport_backend_error_with_hnd_success_is_ok_not_degraded():
         state, new_obs, errors = fw.run(cfg, {"observations": []}, "2026-06-25T14:00:00+00:00")
     finally:
         fw.search_airport = orig
+    assert called == ["HND"]
     assert [o["airport"] for o in new_obs] == ["HND"]
-    assert errors == 1
+    assert errors == 0
     assert state["status"] == "ok"
-    assert state["stats"]["consecutive_errors"] == 0
 
 
 def test_skipped_airport_not_treated_as_current():

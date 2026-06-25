@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """DTW -> Tokyo nonstop fare watcher.
 
-Searches each configured Tokyo airport (HND, NRT) on Google Flights via the
+Searches the configured nonstop Tokyo airport (HND) on Google Flights via the
 `fast-flights` library and writes the dashboard's data/state.json. Records only;
 it does not book, hold, or modify any reservation.
 
@@ -24,7 +24,7 @@ from pathlib import Path
 CONFIG = {
     "origin": "DTW",
     "destination": "Tokyo",
-    "airports": ["HND", "NRT"],          # add/remove Tokyo airports here
+    "airports": ["HND"],                 # DTW has nonstop Tokyo service to HND, not NRT
     "dates": {"depart": "2026-11-20", "return": "2026-11-29"},
     "adults": 2,
     "seat": "economy",

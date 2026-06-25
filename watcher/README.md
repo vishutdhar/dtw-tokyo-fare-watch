@@ -9,34 +9,31 @@ pointing Hermes cron at it is a separate, deliberate step (see *Deploying* below
 
 ## What it does
 
-- Searches each configured Tokyo airport (`HND`, `NRT`) for **nonstop/direct**,
+- Searches the configured Tokyo nonstop airport (`HND`) for **nonstop/direct**,
   round-trip economy fares on the watched dates via the `fast-flights` library
   (Google Flights).
-- Appends one observation per airport per run and rewrites `data/state.json` with
-  the same schema the dashboard already expects (observations + aggregate stats).
+- Appends one HND observation per run and rewrites `data/state.json` with the
+  same schema the dashboard already expects (observations + aggregate stats).
 - Prints a concise Discord-ready summary every run; strong alert wording appears
   only for material drops or good-fare triggers.
 - By default, a real run commits/pushes only `data/state.json` after a fast-forward
   sync from `origin/main` and a local dashboard health check; it never regenerates
   or overwrites `index.html`.
-- Computes the headline numbers **across airports**: `current` is the cheapest of
-  each airport's latest observation (ties prefer HND), `best` is the global
-  minimum across all history.
+- Computes the headline numbers from the HND nonstop history: `current` is the
+  latest HND observation, `best` is the lowest observed HND nonstop fare.
 
 ## Constraints honored
 
 - **Nonstop/direct only.** If an airport returns no valid nonstop priced result
   in a run, it is skipped — a connecting flight is never substituted.
-- **Prefer HND, include NRT when valid.** `preferred_airport` stays `HND`; NRT is
-  added whenever it has a valid nonstop priced result.
+- **HND only for live monitoring.** Current route evidence shows DTW has nonstop
+  Tokyo service to HND, not NRT. NRT connecting itineraries are intentionally
+  out of scope.
 - **No dashboard fields removed.** Output is a superset of the current schema
   (adds `watch.airports`); every existing key is preserved.
-- **Discord-compatible stdout.** The script prints stable summary lines including
-  `searched_at`, `best_total_usd`, `airline`, `route`, `search_scope`,
-  `source_url`, `price_dropped`, `materially_good_fare`, and `caveats`.
-- **Partial airport failure is non-fatal.** If HND succeeds and NRT has a backend
-  failure such as a transient `401 no token provided`, the run records HND,
-  sets status `ok`, and reports the NRT error as a caveat.
+- **Discord-compatible stdout.** The script prints a short human summary: current
+  fare, trip, signal, and the GitHub Pages dashboard link. Operational/debug
+  details stay on stderr/logs.
 
 > Alert thresholds are now aligned to the live Hermes watcher: good fare at/below
 > `$3,000`; material drop requires both at least `$100` and at least `5%` down
@@ -58,8 +55,8 @@ python3 watcher/fare_watch.py --no-push
 ```
 
 Configuration (origin, airports, dates, passengers, thresholds) is the `CONFIG`
-dict at the top of `fare_watch.py`. Adding another Tokyo airport is a one-line
-edit to `airports`.
+dict at the top of `fare_watch.py`. Only add another Tokyo airport if it has a
+true DTW nonstop route; connecting itineraries are outside this watch.
 
 ## Tests
 
@@ -67,16 +64,15 @@ edit to `airports`.
 python3 watcher/test_logic.py
 ```
 
-Covers the pure logic with mock flights (no network): schema mapping, the
-cross-airport `current`/`best` stats, alert flags, Hermes threshold semantics,
-partial airport backend failures, and the nonstop-skip path.
+Covers the pure logic with mock flights (no network): schema mapping,
+`current`/`best` stats, alert flags, Hermes threshold semantics, and the
+nonstop-skip path.
 The live `fast-flights` fetch is isolated in `search_airport()` and is the only
 part not exercised by the tests — verify it with `--dry-run` on the target host.
 
 ## Deploying (manual, deliberate)
 
-1. `--dry-run` on the target host; confirm a sane Discord-ready summary and at
-   least one successful nonstop/direct airport. NRT backend failure is acceptable
-   when HND succeeds, but it should remain visible in caveats.
+1. `--dry-run` on the target host; confirm a sane Discord-ready summary and one
+   successful HND nonstop/direct result. Do not substitute NRT connecting fares.
 2. Confirm the alert thresholds still match Hermes.
 3. Only then point the Hermes cron job at this copy. This PR does not change cron.
