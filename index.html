@@ -340,13 +340,17 @@ function setTrend(id, dir, text) {
 }
 function bandClass(band) { const b = String(band || '').toLowerCase(); return b.includes('low') ? 'low' : b.includes('high') ? 'high' : ''; }
 function signalLabel(o) { if (o.alert) return 'alert'; if (o.material_price_drop) return 'material drop'; if (o.price_dropped) return 'down'; if (o.materially_good_fare) return 'good fare'; return 'watching'; }
-function latestDropText(obs) {
-  if (obs.length < 2) return 'Baseline only — no previous observation to compare.';
-  const latest = obs[obs.length - 1], prev = obs[obs.length - 2];
+function latestDropText(obs, airport, showAirport) {
+  // Scope the comparison to a single airport's series so interleaved multi-airport
+  // rows don't compare two different airports from the same run.
+  const series = airport ? obs.filter(o => (o.airport || '—') === airport) : obs;
+  if (series.length < 2) return 'Baseline only — no previous observation to compare.';
+  const latest = series[series.length - 1], prev = series[series.length - 2];
   const diff = Number(latest.price_total_usd) - Number(prev.price_total_usd);
-  if (diff === 0) return `No change from prior check (${money(latest.price_total_usd)}).`;
-  if (diff < 0) return `Down ${money(Math.abs(diff))} from prior check.`;
-  return `Up ${money(diff)} from prior check.`;
+  const who = showAirport && airport ? `${airport}: ` : '';
+  if (diff === 0) return `${who}No change from prior check (${money(latest.price_total_usd)}).`;
+  if (diff < 0) return `${who}Down ${money(Math.abs(diff))} from prior check.`;
+  return `${who}Up ${money(diff)} from prior check.`;
 }
 async function main() {
   const res = await fetch('data/state.json', { cache: 'no-store' });
@@ -359,7 +363,8 @@ async function main() {
   // Cheapest currently-available flight across all tracked airports — drives the
   // "Current best total" card so its price, via-airport, route and trends always
   // agree, regardless of the order the backend appends per-airport rows.
-  const latestPerAirport = [...new Set(obs.map(o => o.airport || '—'))]
+  const airports = [...new Set(obs.map(o => o.airport || '—'))];
+  const latestPerAirport = airports
     .map(a => obs.filter(o => (o.airport || '—') === a).pop()).filter(Boolean);
   const currentBest = latestPerAirport.length
     ? latestPerAirport.reduce((m, o) => Number(o.price_total_usd) < Number(m.price_total_usd) ? o : m)
@@ -422,7 +427,7 @@ async function main() {
   const bandBadge = document.getElementById('bandBadge');
   bandBadge.textContent = `Google band · ${band}`;
   bandBadge.className = `badge ${bandClass(band)}`;
-  document.getElementById('dropReadout').textContent = latestDropText(obs);
+  document.getElementById('dropReadout').textContent = latestDropText(obs, currentBest.airport, airports.length > 1);
   const chartSkeleton = document.getElementById('chartSkeleton');
   if (!obs.length) {
     if (chartSkeleton) chartSkeleton.style.display = 'none';
@@ -433,7 +438,6 @@ async function main() {
   // Multi-airport aware: shared time axis, one observed-fare line per airport (HND, NRT, …).
   const AIRPORT_COLORS = { HND:'#67e8f9', NRT:'#f4bf50', NGO:'#fb7185', KIX:'#a78bfa' };
   const palette = ['#67e8f9','#f4bf50','#fb7185','#a78bfa','#25d695'];
-  const airports = [...new Set(obs.map(o => o.airport || '—'))];
   const times = [...new Set(obs.map(o => o.checked_at))].sort((a, b) => new Date(a) - new Date(b));
   const labels = times.map(shortDate);
   const priceAt = {};
