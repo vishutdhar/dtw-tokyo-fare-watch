@@ -72,6 +72,7 @@ def test_material_drop_requires_100_usd_and_5_percent():
 
 def test_nonstop_skip_is_not_an_error():
     """No nonstop result for an airport -> skipped, not counted as a backend error."""
+    two_cfg = dict(cfg, airports=["HND", "NRT"])  # multi-airport behavior, independent of prod config
     def fake_search(c, airport, now):
         if airport == "NRT":
             return None  # simulate no nonstop/direct priced result
@@ -79,7 +80,7 @@ def test_nonstop_skip_is_not_an_error():
     orig = fw.search_airport
     fw.search_airport = fake_search
     try:
-        state, new_obs, errors = fw.run(cfg, {"observations": []}, "2026-06-25T14:00:00+00:00")
+        state, new_obs, errors = fw.run(two_cfg, {"observations": []}, "2026-06-25T14:00:00+00:00")
     finally:
         fw.search_airport = orig
     assert [o["airport"] for o in new_obs] == ["HND"]
@@ -89,6 +90,7 @@ def test_nonstop_skip_is_not_an_error():
 
 def test_secondary_airport_backend_error_with_hnd_success_is_ok_not_degraded():
     """NRT backend failure should not degrade a successful HND run."""
+    two_cfg = dict(cfg, airports=["HND", "NRT"])  # multi-airport behavior, independent of prod config
     def fake_search(c, airport, now):
         if airport == "NRT":
             raise RuntimeError('401 Result: {"error":"no token provided"}')
@@ -96,7 +98,7 @@ def test_secondary_airport_backend_error_with_hnd_success_is_ok_not_degraded():
     orig = fw.search_airport
     fw.search_airport = fake_search
     try:
-        state, new_obs, errors = fw.run(cfg, {"observations": []}, "2026-06-25T14:00:00+00:00")
+        state, new_obs, errors = fw.run(two_cfg, {"observations": []}, "2026-06-25T14:00:00+00:00")
     finally:
         fw.search_airport = orig
     assert [o["airport"] for o in new_obs] == ["HND"]

@@ -9,9 +9,10 @@ pointing Hermes cron at it is a separate, deliberate step (see *Deploying* below
 
 ## What it does
 
-- Searches each configured Tokyo airport (`HND`, `NRT`) for **nonstop/direct**,
+- Searches each configured Tokyo airport (`HND`) for **nonstop/direct**,
   round-trip economy fares on the watched dates via the `fast-flights` library
-  (Google Flights).
+  (Google Flights). Detroit→Tokyo nonstop is HND only — Delta discontinued
+  nonstop DTW→NRT, so Narita has no nonstop service to track.
 - Appends one observation per airport per run and rewrites `data/state.json` with
   the same schema the dashboard already expects (observations + aggregate stats).
 - Prints a concise Discord-ready summary every run; strong alert wording appears
@@ -27,8 +28,9 @@ pointing Hermes cron at it is a separate, deliberate step (see *Deploying* below
 
 - **Nonstop/direct only.** If an airport returns no valid nonstop priced result
   in a run, it is skipped — a connecting flight is never substituted.
-- **Prefer HND, include NRT when valid.** `preferred_airport` stays `HND`; NRT is
-  added whenever it has a valid nonstop priced result.
+- **HND only (nonstop).** `preferred_airport` is `HND`. The multi-airport code
+  path is retained, so another Tokyo airport can be added to `airports` if it ever
+  gains nonstop DTW service — but NRT currently has none.
 - **No dashboard fields removed.** Output is a superset of the current schema
   (adds `watch.airports`); every existing key is preserved.
 - **Discord-compatible stdout.** The script prints stable summary lines including
