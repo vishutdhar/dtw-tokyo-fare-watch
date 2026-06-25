@@ -17,7 +17,8 @@ pointing Hermes cron at it is a separate, deliberate step (see *Deploying* below
 - Prints a concise Discord-ready summary every run; strong alert wording appears
   only for material drops or good-fare triggers.
 - By default, a real run commits/pushes only `data/state.json` after a fast-forward
-  sync from `origin/main`; it never regenerates or overwrites `index.html`.
+  sync from `origin/main` and a local dashboard health check; it never regenerates
+  or overwrites `index.html`.
 - Computes the headline numbers **across airports**: `current` is the cheapest of
   each airport's latest observation (ties prefer HND), `best` is the global
   minimum across all history.

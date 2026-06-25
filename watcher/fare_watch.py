@@ -38,6 +38,10 @@ STATE_PATH = os.path.join(REPO_ROOT, "data", "state.json")
 DASHBOARD_URL = "https://vishutdhar.github.io/dtw-tokyo-fare-watch/"
 GITHUB_REPO_URL = "https://github.com/vishutdhar/dtw-tokyo-fare-watch"
 GITHUB_HOME = os.environ.get("DTW_TOKYO_GITHUB_HOME", "/Users/openclaw")
+DASHBOARD_CHECKER = os.environ.get(
+    "DTW_TOKYO_DASHBOARD_CHECKER",
+    "/Users/openclaw/.hermes-discord/profiles/leo/scripts/dtw_tokyo_fare_dashboard_check.py",
+)
 CAVEATS = [
     "Google Flights via fast-flights",
     "source_url is a search URL, not a booking link",
@@ -274,6 +278,24 @@ def has_git_remote():
     return res.returncode == 0 and bool(res.stdout.strip())
 
 
+def run_dashboard_check_local():
+    checker = Path(DASHBOARD_CHECKER)
+    if not checker.exists():
+        return "missing"
+    env = os.environ.copy()
+    env["DTW_TOKYO_DASHBOARD_REPO"] = REPO_ROOT
+    env["HOME"] = GITHUB_HOME
+    res = subprocess.run(
+        [sys.executable, str(checker), "--local"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return "ok" if res.returncode == 0 else "failed"
+
+
 def sync_origin_ff_only():
     if not has_git_remote():
         return "no-remote"
@@ -290,6 +312,9 @@ def sync_origin_ff_only():
 def commit_and_push_data():
     if not has_git_remote():
         return "no-remote"
+    check_status = run_dashboard_check_local()
+    if check_status != "ok":
+        return f"local-check-{check_status}"
     git_cmd(["git", "add", "data/state.json"])
     diff = git_cmd(["git", "diff", "--cached", "--quiet", "--", "data/state.json"])
     if diff.returncode == 0:
