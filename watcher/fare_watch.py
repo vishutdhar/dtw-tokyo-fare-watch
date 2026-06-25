@@ -10,15 +10,15 @@ Dry run (no writes):  python3 watcher/fare_watch.py --dry-run
 
 Scope notes (per maintainer guidance):
 - Nonstop/direct only — connecting flights are never recorded.
-- Writes data/state.json only; it does NOT send Discord alerts or touch cron.
-  Whatever consumes the alert flags (e.g. Hermes -> Discord) keeps its semantics
-  as long as those flags are preserved, which they are.
-- GOOD_FARE_TOTAL / MATERIAL_DROP thresholds below drive the alert flags; confirm
-  they match the existing Hermes values before pointing live cron at this copy.
+- Writes data/state.json, prints a concise Discord-ready summary, and can
+  commit/push the data update for GitHub Pages without overwriting index.html.
+- GOOD_FARE_TOTAL / MATERIAL_DROP thresholds below match the existing Hermes
+  watcher semantics before this copy is pointed at live cron.
 """
 from __future__ import annotations
-import json, os, re, sys
+import json, os, re, subprocess, sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 # ---- config -----------------------------------------------------------------
 CONFIG = {
@@ -30,11 +30,14 @@ CONFIG = {
     "seat": "economy",
     "nonstop_direct_only": True,
     "good_fare_total": 3000,             # alert at/below this total
-    "material_drop_usd": 150,            # "material" drop threshold vs prior same-airport check
+    "material_drop_usd": 100,            # Hermes threshold: drop from last >= $100
+    "material_drop_pct": 0.05,           # Hermes threshold: and >= 5%
 }
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_PATH = os.path.join(REPO_ROOT, "data", "state.json")
 DASHBOARD_URL = "https://vishutdhar.github.io/dtw-tokyo-fare-watch/"
+GITHUB_REPO_URL = "https://github.com/vishutdhar/dtw-tokyo-fare-watch"
+GITHUB_HOME = os.environ.get("DTW_TOKYO_GITHUB_HOME", "/Users/openclaw")
 CAVEATS = [
     "Google Flights via fast-flights",
     "source_url is a search URL, not a booking link",
@@ -98,7 +101,9 @@ def build_observation(cfg, airport, flight, price_band, now_iso, source_url=None
 def recompute(cfg, observations):
     """Pure: given the full observation history (with this run's rows appended),
     set per-observation alert flags and return the aggregate stats block."""
-    good = cfg["good_fare_total"]; material = cfg["material_drop_usd"]
+    good = cfg["good_fare_total"]
+    material = cfg["material_drop_usd"]
+    material_pct = cfg.get("material_drop_pct", 0.0)
     valid = [o for o in observations if isinstance(o.get("price_total_usd"), (int, float))]
     # per-observation signals: compare each obs to the previous obs of the SAME airport
     seen_prev = {}
@@ -106,8 +111,12 @@ def recompute(cfg, observations):
         a = o.get("airport")
         prev = seen_prev.get(a)
         price = o["price_total_usd"]
+        drop_abs = (prev - price) if prev is not None and price < prev else 0
+        drop_pct = (drop_abs / prev) if prev else 0.0
         o["price_dropped"] = bool(prev is not None and price < prev)
-        o["material_price_drop"] = bool(prev is not None and (prev - price) >= material)
+        o["drop_abs_usd"] = drop_abs
+        o["drop_pct"] = drop_pct
+        o["material_price_drop"] = bool(o["price_dropped"] and drop_abs >= material and drop_pct >= material_pct)
         o["materially_good_fare"] = bool(price <= good)
         o["alert"] = bool(o["material_price_drop"] or o["materially_good_fare"])
         seen_prev[a] = price
@@ -134,7 +143,8 @@ def build_state(cfg, prior_state, new_observations, now_iso, errors=0):
     """Pure: merge new observations into prior state and rebuild the file."""
     observations = list(prior_state.get("observations", [])) + list(new_observations)
     stats = recompute(cfg, observations)
-    stats["consecutive_errors"] = errors
+    stats["backend_errors_this_run"] = errors
+    stats["consecutive_errors"] = 0 if new_observations else errors
     # Keep the fare-search links alive: newest observation with a URL, else the
     # prior state's, else any observation's — never null them out on a quiet run.
     top_source = (next((o.get("source_url") for o in reversed(observations) if o.get("source_url")), None)
@@ -146,7 +156,7 @@ def build_state(cfg, prior_state, new_observations, now_iso, errors=0):
         "observations": observations,
         "source_url": top_source,
         "stats": stats,
-        "status": "ok" if errors == 0 else "degraded",
+        "status": "ok" if new_observations else ("ok" if errors == 0 else "degraded"),
         "watch": {
             "adults": cfg["adults"],
             "dates": cfg["dates"],
@@ -179,9 +189,123 @@ def run(cfg, prior, now_iso):
     state = build_state(cfg, prior, new_obs, now_iso, errors=errors)
     return state, new_obs, errors
 
+def money(n):
+    return "unknown" if n is None else f"${int(n):,}"
+
+
+def yes_no(value):
+    return "yes" if value else "no"
+
+
+def latest_observation(state):
+    stats = state.get("stats", {})
+    ts = stats.get("last_checked_at")
+    price = stats.get("current_price_total_usd")
+    airport = stats.get("last_airport")
+    candidates = [o for o in state.get("observations", [])
+                  if o.get("checked_at") == ts and o.get("price_total_usd") == price and o.get("airport") == airport]
+    if candidates:
+        return candidates[-1]
+    return state.get("observations", [])[-1] if state.get("observations") else None
+
+
+def price_dropped_text(obs):
+    if not obs or not obs.get("price_dropped"):
+        return "no"
+    drop = int(obs.get("drop_abs_usd") or 0)
+    pct = float(obs.get("drop_pct") or 0.0)
+    material = "material" if obs.get("material_price_drop") else "below alert threshold"
+    return f"yes ({money(drop)} / {pct:.1%} from previous same-airport check; {material})"
+
+
+def route_text(cfg, obs=None):
+    airport = (obs or {}).get("airport") or "/".join(cfg["airports"])
+    d = cfg["dates"]
+    return f"{cfg['origin']}⇄{airport} nonstop/direct, {d['depart']}→{d['return']}, {cfg['adults']} adults, {cfg['seat']}"
+
+
+def summary_text(cfg, state, errors, dry_run=False):
+    stats = state.get("stats", {})
+    obs = latest_observation(state)
+    heading = "DTW→Tokyo fare watch summary"
+    if obs and obs.get("alert"):
+        heading = "🚨 DTW→Tokyo FARE ALERT"
+    if dry_run:
+        heading = "DRY RUN — " + heading
+    source = (obs or {}).get("source_url") or state.get("source_url") or search_url(cfg, cfg["airports"][0])
+    lines = [
+        heading,
+        f"searched_at: {state.get('generated_at')}",
+        f"best_total_usd: {stats.get('current_price_total_usd', 'unknown')}",
+        f"airline: {(obs or {}).get('carrier') or stats.get('last_carrier') or 'unknown'}",
+        f"route: {route_text(cfg, obs)}",
+        f"search_scope: {cfg['origin']}⇄{','.join(cfg['airports'])} nonstop/direct only; no connecting fare fallback",
+        f"source_url: <{source}>",
+        f"dashboard_url: <{DASHBOARD_URL}>",
+        f"github_url: <{GITHUB_REPO_URL}>",
+        f"price_dropped: {price_dropped_text(obs)}",
+        f"materially_good_fare: {yes_no(bool((obs or {}).get('materially_good_fare')))}",
+    ]
+    if obs and obs.get("alert"):
+        if obs.get("materially_good_fare"):
+            reason = f"total is <= {money(cfg['good_fare_total'])}"
+        else:
+            reason = "material drop from previous same-airport check"
+        lines.append(f"alert_reason: {reason}")
+    caveats = list(CAVEATS)
+    if errors and obs:
+        caveats.append(f"secondary_backend_errors={errors}; successful airport recorded, run status remains ok")
+    elif errors:
+        caveats.append(f"backend_errors={errors}")
+    lines.append("caveats: " + "; ".join(caveats) + ".")
+    return "\n".join(lines)
+
+
+def git_cmd(args, check=False):
+    env = os.environ.copy()
+    env["HOME"] = GITHUB_HOME
+    return subprocess.run(args, cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=check)
+
+
+def has_git_remote():
+    if not (Path(REPO_ROOT) / ".git").exists():
+        return False
+    res = git_cmd(["git", "remote", "get-url", "origin"])
+    return res.returncode == 0 and bool(res.stdout.strip())
+
+
+def sync_origin_ff_only():
+    if not has_git_remote():
+        return "no-remote"
+    dirty = git_cmd(["git", "status", "--porcelain"])
+    if dirty.stdout.strip():
+        return "dirty-skip"
+    fetch = git_cmd(["git", "fetch", "origin", "main"])
+    if fetch.returncode != 0:
+        return "fetch-failed"
+    pull = git_cmd(["git", "pull", "--ff-only", "origin", "main"])
+    return "synced" if pull.returncode == 0 else "sync-failed"
+
+
+def commit_and_push_data():
+    if not has_git_remote():
+        return "no-remote"
+    git_cmd(["git", "add", "data/state.json"])
+    diff = git_cmd(["git", "diff", "--cached", "--quiet", "--", "data/state.json"])
+    if diff.returncode == 0:
+        return "no-change"
+    commit = git_cmd(["git", "commit", "-m", "data: update fare watch state"])
+    if commit.returncode != 0:
+        return "commit-failed"
+    push = git_cmd(["git", "push", "origin", "main"])
+    return "pushed" if push.returncode == 0 else "push-failed"
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     dry_run = "--dry-run" in argv
+    no_push = "--no-push" in argv or os.environ.get("DTW_TOKYO_DASHBOARD_DISABLE") == "1"
+    sync_status = "dry-run" if dry_run else ("disabled" if no_push else sync_origin_ff_only())
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     prior = {}
     if os.path.exists(STATE_PATH):
@@ -190,18 +314,16 @@ def main(argv=None):
     state, new_obs, errors = run(CONFIG, prior, now_iso)
     payload = json.dumps(state, indent=2, sort_keys=True)
     if dry_run:
-        # Show what would be written; touch nothing.
-        print(payload)
-        print(f"[dry-run] {len(new_obs)} new obs; "
-              f"current={state['stats'].get('current_price_total_usd')} "
-              f"via {state['stats'].get('last_airport')}; errors={errors}", file=sys.stderr)
-        return
+        print(summary_text(CONFIG, state, errors, dry_run=True))
+        print(f"[dry-run] sync={sync_status}; writes=0; new_obs={len(new_obs)}; errors={errors}", file=sys.stderr)
+        return 0
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
     with open(STATE_PATH, "w") as fh:
         fh.write(payload + "\n")
-    print(f"Wrote {STATE_PATH}: {len(new_obs)} new obs, "
-          f"current={state['stats'].get('current_price_total_usd')} "
-          f"via {state['stats'].get('last_airport')}")
+    push_status = "disabled" if no_push else commit_and_push_data()
+    print(summary_text(CONFIG, state, errors, dry_run=False))
+    print(f"publish_status: sync={sync_status}; push={push_status}")
+    return 0
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

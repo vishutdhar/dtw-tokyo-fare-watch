@@ -14,6 +14,10 @@ pointing Hermes cron at it is a separate, deliberate step (see *Deploying* below
   (Google Flights).
 - Appends one observation per airport per run and rewrites `data/state.json` with
   the same schema the dashboard already expects (observations + aggregate stats).
+- Prints a concise Discord-ready summary every run; strong alert wording appears
+  only for material drops or good-fare triggers.
+- By default, a real run commits/pushes only `data/state.json` after a fast-forward
+  sync from `origin/main`; it never regenerates or overwrites `index.html`.
 - Computes the headline numbers **across airports**: `current` is the cheapest of
   each airport's latest observation (ties prefer HND), `best` is the global
   minimum across all history.
@@ -26,25 +30,30 @@ pointing Hermes cron at it is a separate, deliberate step (see *Deploying* below
   added whenever it has a valid nonstop priced result.
 - **No dashboard fields removed.** Output is a superset of the current schema
   (adds `watch.airports`); every existing key is preserved.
-- **Discord untouched.** This script only writes `state.json`. It does not send
-  alerts. Whatever consumes the alert flags (`alert`, `materially_good_fare`,
-  `material_price_drop`, `price_dropped`) keeps its semantics as long as those
-  flags are preserved — which they are.
+- **Discord-compatible stdout.** The script prints stable summary lines including
+  `searched_at`, `best_total_usd`, `airline`, `route`, `search_scope`,
+  `source_url`, `price_dropped`, `materially_good_fare`, and `caveats`.
+- **Partial airport failure is non-fatal.** If HND succeeds and NRT has a backend
+  failure such as a transient `401 no token provided`, the run records HND,
+  sets status `ok`, and reports the NRT error as a caveat.
 
-> ⚠️ **Confirm thresholds before going live.** `GOOD_FARE_TOTAL` (3000) and
-> `MATERIAL_DROP` (150) in `fare_watch.py` drive the alert flags. Make sure they
-> match the existing Hermes values so Discord alerting behaves identically.
+> Alert thresholds are now aligned to the live Hermes watcher: good fare at/below
+> `$3,000`; material drop requires both at least `$100` and at least `5%` down
+> from the previous same-airport observation.
 
 ## Usage
 
 ```bash
 pip install -r watcher/requirements.txt
 
-# Dry run — prints the state.json that WOULD be written; touches nothing:
+# Dry run — prints the Discord summary that WOULD be delivered; touches nothing:
 python3 watcher/fare_watch.py --dry-run
 
-# Real run — rewrites data/state.json:
+# Real run — fast-forward syncs, rewrites data/state.json, commits/pushes data only:
 python3 watcher/fare_watch.py
+
+# Local write test without git push:
+python3 watcher/fare_watch.py --no-push
 ```
 
 Configuration (origin, airports, dates, passengers, thresholds) is the `CONFIG`
@@ -58,13 +67,15 @@ python3 watcher/test_logic.py
 ```
 
 Covers the pure logic with mock flights (no network): schema mapping, the
-cross-airport `current`/`best` stats, alert flags, and the nonstop-skip path.
+cross-airport `current`/`best` stats, alert flags, Hermes threshold semantics,
+partial airport backend failures, and the nonstop-skip path.
 The live `fast-flights` fetch is isolated in `search_airport()` and is the only
 part not exercised by the tests — verify it with `--dry-run` on the target host.
 
 ## Deploying (manual, deliberate)
 
-1. `--dry-run` on the target host; confirm a sane `state.json` and that NRT
-   returns nonstop results.
-2. Confirm the alert thresholds match Hermes.
+1. `--dry-run` on the target host; confirm a sane Discord-ready summary and at
+   least one successful nonstop/direct airport. NRT backend failure is acceptable
+   when HND succeeds, but it should remain visible in caveats.
+2. Confirm the alert thresholds still match Hermes.
 3. Only then point the Hermes cron job at this copy. This PR does not change cron.
