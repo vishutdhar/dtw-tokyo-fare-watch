@@ -101,6 +101,20 @@ def test_partial_failure_optional_airport_not_degraded():
     assert state["stats"]["consecutive_errors"] == 0   # streak resets — HND is healthy
 
 
+def test_required_airport_no_result_is_degraded():
+    """A required airport returning no nonstop result (not just an exception) degrades the run."""
+    def fake(c, airport, now):
+        return None if airport == "HND" else _obs("NRT", 3851, "typical", t=now)
+    orig, fw.search_airport = fw.search_airport, fake
+    try:
+        state, new_obs, info = fw.run(cfg, {"observations": [], "stats": {"consecutive_errors": 1}}, T2)
+    finally:
+        fw.search_airport = orig
+    assert info["degraded"] is True and info["missing_required"] == ["HND"]
+    assert state["status"] == "degraded"
+    assert state["stats"]["consecutive_errors"] == 2   # prior 1 + 1
+
+
 def test_required_failure_is_degraded_and_increments():
     """HND (required) failing degrades the run and advances the error streak."""
     def fake(c, airport, now):

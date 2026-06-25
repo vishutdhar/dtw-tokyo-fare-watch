@@ -197,13 +197,18 @@ def run(cfg, prior, now_iso):
             print(f"[info] {airport}: no nonstop/direct priced result this run; skipped.", file=sys.stderr)
             continue
         new_obs.append(obs)
+    # A required airport is "satisfied" only if it produced a fresh fare this run.
+    # Missing one — whether it errored or returned no nonstop result — degrades the run.
+    got = {o["airport"] for o in new_obs}
     required = set(cfg.get("required_airports") or [cfg["airports"][0]])
-    degraded = bool(required & set(errored))     # a required airport hard-failed
+    missing_required = required - got
+    degraded = bool(missing_required)
     prior_streak = prior.get("stats", {}).get("consecutive_errors", 0)
     consecutive_errors = (prior_streak + 1) if degraded else 0
     state = build_state(cfg, prior, new_obs, now_iso,
                         consecutive_errors=consecutive_errors, degraded=degraded)
-    info = {"new": len(new_obs), "errored": errored, "degraded": degraded}
+    info = {"new": len(new_obs), "errored": errored,
+            "missing_required": sorted(missing_required), "degraded": degraded}
     return state, new_obs, info
 
 def summarize(cfg, state):
@@ -245,11 +250,13 @@ def publish(commit_msg):
     """Commit & push ONLY data/state.json (never index.html or anything else)."""
     def git(*args):
         return subprocess.run(["git", "-C", REPO_ROOT, *args], capture_output=True, text=True)
-    git("add", "--", "data/state.json")
-    if git("diff", "--cached", "--quiet", "--", "data/state.json").returncode == 0:
+    # Skip if data/state.json is unchanged vs HEAD (works regardless of what else is staged).
+    if git("diff", "--quiet", "HEAD", "--", "data/state.json").returncode == 0:
         print("[publish] no data change to commit", file=sys.stderr)
         return
-    c = git("commit", "-m", commit_msg)
+    # Pathspec commit => commits ONLY data/state.json's working-tree content, leaving any
+    # other staged change (e.g. index.html) out of this commit.
+    c = git("commit", "-m", commit_msg, "--", "data/state.json")
     if c.returncode != 0:
         print(f"[publish] commit failed: {c.stderr.strip()}", file=sys.stderr)
         return
