@@ -46,6 +46,14 @@ def _money_to_int(s):
     digits = re.sub(r"[^\d]", "", str(s) or "")
     return int(digits) if digits else None
 
+def search_url(cfg, airport):
+    """Google Flights *search* URL (not a booking link) for one airport."""
+    from urllib.parse import quote_plus
+    d = cfg["dates"]
+    q = (f"Google Flights {cfg['origin']} to {airport} round trip "
+         f"{d['depart']} {d['return']} {cfg['adults']} adults nonstop {cfg['seat']}")
+    return "https://www.google.com/travel/flights/search?q=" + quote_plus(q)
+
 def search_airport(cfg, airport, now_iso):
     """Live search for one airport.
 
@@ -67,7 +75,8 @@ def search_airport(cfg, airport, now_iso):
     if not nonstop:
         return None
     best = min(nonstop, key=lambda f: _money_to_int(f.price))
-    return build_observation(cfg, airport, best, getattr(res, "current_price", None), now_iso)
+    return build_observation(cfg, airport, best, getattr(res, "current_price", None), now_iso,
+                             source_url=search_url(cfg, airport))
 
 def build_observation(cfg, airport, flight, price_band, now_iso, source_url=None):
     """Pure: turn a flight result into an observation dict (matches existing schema)."""
@@ -126,12 +135,16 @@ def build_state(cfg, prior_state, new_observations, now_iso, errors=0):
     observations = list(prior_state.get("observations", [])) + list(new_observations)
     stats = recompute(cfg, observations)
     stats["consecutive_errors"] = errors
+    # Keep the fare-search links alive: newest observation with a URL, else the
+    # prior state's, else any observation's — never null them out on a quiet run.
+    top_source = (next((o.get("source_url") for o in reversed(observations) if o.get("source_url")), None)
+                  or prior_state.get("source_url"))
     return {
         "caveats": CAVEATS,
         "dashboard_url": DASHBOARD_URL,
         "generated_at": now_iso,
         "observations": observations,
-        "source_url": next((o.get("source_url") for o in reversed(new_observations) if o.get("source_url")), None),
+        "source_url": top_source,
         "stats": stats,
         "status": "ok" if errors == 0 else "degraded",
         "watch": {

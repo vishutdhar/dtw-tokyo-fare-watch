@@ -67,6 +67,22 @@ def test_nonstop_skip_is_not_an_error():
     assert state["stats"]["last_airport"] == "HND"
 
 
+def test_source_url_built_and_preserved():
+    u = fw.search_url(cfg, "HND")
+    assert u.startswith("https://www.google.com/travel/flights/search?q=")
+    assert "HND" in u and "nonstop" in u
+    t = "2026-06-25T14:00:00+00:00"
+    # new observations carry the search URL -> top-level reflects it
+    obs = [fw.build_observation(cfg, "HND", MockFlight("Delta", "$4,031"), "high", t, source_url=u)]
+    s1 = fw.build_state(cfg, {"observations": []}, obs, t)
+    assert s1["source_url"] == u and s1["observations"][-1]["source_url"] == u
+    # a quiet run (no new obs) must not null out a previously-known URL
+    prior = {"observations": [fw.build_observation(cfg, "HND", MockFlight("Delta", "$4,031"), "high", t)],
+             "source_url": u}
+    s2 = fw.build_state(cfg, prior, [], t)
+    assert s2["source_url"] == u
+
+
 def test_build_state_matches_existing_schema():
     """Every key the dashboard's data/state.json uses must still be produced."""
     if not os.path.exists(STATE_PATH):
