@@ -256,10 +256,6 @@ def summary_text(cfg, state, errors, dry_run=False):
         f"Signal: {signal}",
         f"GitHub Page: <{DASHBOARD_URL}>",
     ]
-    if errors and obs:
-        lines.append("Note: HND checked successfully; NRT is temporarily unavailable.")
-    elif errors:
-        lines.append("Note: backend check had errors; see dashboard/history for details.")
     return "\n".join(lines)
 
 
