@@ -356,28 +356,39 @@ async function main() {
   const stats = state.stats || {};
   const obs = (state.observations || []).filter(o => Number.isFinite(Number(o.price_total_usd)));
   const latest = obs[obs.length - 1] || {};
+  // Cheapest currently-available flight across all tracked airports — drives the
+  // "Current best total" card so its price, via-airport, route and trends always
+  // agree, regardless of the order the backend appends per-airport rows.
+  const latestPerAirport = [...new Set(obs.map(o => o.airport || '—'))]
+    .map(a => obs.filter(o => (o.airport || '—') === a).pop()).filter(Boolean);
+  const currentBest = latestPerAirport.length
+    ? latestPerAirport.reduce((m, o) => Number(o.price_total_usd) < Number(m.price_total_usd) ? o : m)
+    : latest;
   const dates = watch.dates || {};
-  const source = latest.source_url || state.source_url;
+  const source = currentBest.source_url || latest.source_url || state.source_url;
   setHref('sourceTop', source); setHref('sourceHero', source);
-  const route = `${watch.origin || 'DTW'} ⇄ ${latest.airport || stats.last_airport || watch.preferred_airport || 'HND'} nonstop/direct · ${dates.depart || '—'} → ${dates.return || '—'} · ${watch.adults || 2} adults · ${watch.seat || 'economy'}`;
-  const destAirport = latest.airport || stats.last_airport || watch.preferred_airport || 'HND';
+  const destAirport = currentBest.airport || stats.last_airport || watch.preferred_airport || 'HND';
+  const route = `${watch.origin || 'DTW'} ⇄ ${destAirport} nonstop/direct · ${dates.depart || '—'} → ${dates.return || '—'} · ${watch.adults || 2} adults · ${watch.seat || 'economy'}`;
   document.getElementById('subtitle').textContent = route;
   document.getElementById('routeReadout').textContent = route;
   document.getElementById('routeChip').textContent = `${dates.depart || '—'} → ${dates.return || '—'}`;
 
-  const current = Number(stats.current_price_total_usd);
+  const current = Number.isFinite(Number(currentBest.price_total_usd)) ? Number(currentBest.price_total_usd) : Number(stats.current_price_total_usd);
   const lowest = Number(stats.best_price_total_usd);
   document.getElementById('currentFare').textContent = money(current); unskeleton('currentFare');
   document.getElementById('lowestFare').textContent = money(lowest); unskeleton('lowestFare');
   document.getElementById('targetFare').textContent = money(GOOD_FARE_TOTAL);
   document.getElementById('observations').textContent = String(stats.observation_count ?? obs.length); unskeleton('observations');
   document.getElementById('lastChecked').textContent = `Last checked ${fmtDate(stats.last_checked_at)}${timeAgo(stats.last_checked_at) ? ` · ${timeAgo(stats.last_checked_at)}` : ''}`;
-  document.getElementById('currentNote').textContent = `via ${latest.airport || stats.last_airport || destAirport} · ${latest.carrier || stats.last_carrier || 'Unknown carrier'} · ${latest.duration || 'duration unknown'}`;
+  document.getElementById('currentNote').textContent = `via ${currentBest.airport || stats.last_airport || destAirport} · ${currentBest.carrier || stats.last_carrier || 'Unknown carrier'} · ${currentBest.duration || 'duration unknown'}`;
   document.getElementById('lowestNote').textContent = stats.best_observed_at ? `Observed ${fmtDate(stats.best_observed_at)}` : 'Since watcher baseline.';
 
-  // Metric trends (lower fare is good → down = green)
-  if (obs.length >= 2) {
-    const diff = current - Number(obs[obs.length - 2].price_total_usd);
+  // Metric trends (lower fare is good → down = green). Compare the current-best
+  // fare to the previous check of the same airport, so the delta is meaningful
+  // even when airports are interleaved.
+  const sameAirport = obs.filter(o => (o.airport || '—') === (currentBest.airport || '—'));
+  if (sameAirport.length >= 2) {
+    const diff = current - Number(sameAirport[sameAirport.length - 2].price_total_usd);
     if (diff < 0) setTrend('currentTrend', 'down', `${money(Math.abs(diff))} vs prior check`);
     else if (diff > 0) setTrend('currentTrend', 'up', `${money(diff)} vs prior check`);
     else setTrend('currentTrend', 'flat', 'unchanged vs prior check');
@@ -399,15 +410,15 @@ async function main() {
   const destLabel = document.getElementById('mapDest'); if (destLabel) destLabel.textContent = destAirport;
   const miles = greatCircleMiles(watch.origin || 'DTW', destAirport);
   document.getElementById('routeDistance').textContent = miles ? `${miles.toLocaleString()} mi` : '—';
-  document.getElementById('routeFlightTime').textContent = latest.duration || stats.last_duration || '—';
-  document.getElementById('latestCarrier').textContent = latest.carrier || stats.last_carrier || 'Unknown';
+  document.getElementById('routeFlightTime').textContent = currentBest.duration || stats.last_duration || '—';
+  document.getElementById('latestCarrier').textContent = currentBest.carrier || stats.last_carrier || 'Unknown';
   if (days != null && days >= 0) { const cd = document.getElementById('countdown'); cd.textContent = `✈ ${days} days to departure`; cd.hidden = false; }
-  document.getElementById('latestRoute').textContent = `${watch.origin || 'DTW'} → ${destAirport} · ${latest.carrier || stats.last_carrier || 'carrier unknown'}`;
-  document.getElementById('latestDetail').textContent = `${latest.departure || 'Departure unknown'} → ${latest.arrival || 'arrival unknown'} · ${latest.duration || 'duration unknown'}`;
+  document.getElementById('latestRoute').textContent = `${watch.origin || 'DTW'} → ${destAirport} · ${currentBest.carrier || stats.last_carrier || 'carrier unknown'}`;
+  document.getElementById('latestDetail').textContent = `${currentBest.departure || 'Departure unknown'} → ${currentBest.arrival || 'arrival unknown'} · ${currentBest.duration || 'duration unknown'}`;
   const statusGood = Number(stats.consecutive_errors || 0) === 0;
   document.getElementById('statusDot').className = 'dot' + (statusGood ? ' good' : '');
   document.getElementById('statusText').textContent = statusGood ? 'Tracking live' : `${stats.consecutive_errors} backend error(s)`;
-  const band = latest.google_price_band || stats.last_google_price_band || 'unknown';
+  const band = currentBest.google_price_band || stats.last_google_price_band || 'unknown';
   const bandBadge = document.getElementById('bandBadge');
   bandBadge.textContent = `Google band · ${band}`;
   bandBadge.className = `badge ${bandClass(band)}`;
