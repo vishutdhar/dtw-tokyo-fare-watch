@@ -174,6 +174,52 @@ def test_source_url_built_and_preserved():
     assert s2["source_url"] == u
 
 
+class _FakeProc:
+    def __init__(self, rc, err=""):
+        self.returncode, self.stderr, self.stdout = rc, err, ""
+
+
+def _patch_git(monkey):
+    """Replace subprocess.run with `monkey(args) -> _FakeProc`; returns a restore fn."""
+    import subprocess
+    orig = subprocess.run
+    subprocess.run = lambda args, **kw: monkey(args)
+    return lambda: setattr(subprocess, "run", orig)
+
+
+def test_publish_propagates_commit_failure():
+    def fake(args):
+        if "diff" in args:   return _FakeProc(1)              # state.json changed
+        if "commit" in args: return _FakeProc(128, "Author identity unknown")
+        return _FakeProc(0)
+    restore = _patch_git(fake)
+    try:
+        assert fw.publish("msg") is False                    # failure surfaced to caller
+    finally:
+        restore()
+
+
+def test_publish_propagates_push_failure():
+    def fake(args):
+        if "diff" in args:   return _FakeProc(1)
+        if "commit" in args: return _FakeProc(0)
+        if "push" in args:   return _FakeProc(1, "rejected")
+        return _FakeProc(0)
+    restore = _patch_git(fake)
+    try:
+        assert fw.publish("msg") is False
+    finally:
+        restore()
+
+
+def test_publish_noop_is_success():
+    restore = _patch_git(lambda args: _FakeProc(0))          # diff --quiet -> 0 == no change
+    try:
+        assert fw.publish("msg") is True
+    finally:
+        restore()
+
+
 def test_build_state_matches_existing_schema():
     """Every key the dashboard's data/state.json uses must still be produced."""
     if not os.path.exists(STATE_PATH):

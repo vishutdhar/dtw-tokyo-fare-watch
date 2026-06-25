@@ -255,24 +255,30 @@ def summarize(cfg, state, now_iso=None):
     return lines
 
 def publish(commit_msg):
-    """Commit & push ONLY data/state.json (never index.html or anything else)."""
+    """Commit & push ONLY data/state.json (never index.html or anything else).
+
+    Returns True on success or a no-op (nothing to publish), False if the commit
+    or push failed — so the caller can exit non-zero and let cron retry/alert
+    rather than reporting a healthy run whose update never reached the dashboard.
+    """
     def git(*args):
         return subprocess.run(["git", "-C", REPO_ROOT, *args], capture_output=True, text=True)
     # Skip if data/state.json is unchanged vs HEAD (works regardless of what else is staged).
     if git("diff", "--quiet", "HEAD", "--", "data/state.json").returncode == 0:
         print("[publish] no data change to commit", file=sys.stderr)
-        return
+        return True
     # Pathspec commit => commits ONLY data/state.json's working-tree content, leaving any
     # other staged change (e.g. index.html) out of this commit.
     c = git("commit", "-m", commit_msg, "--", "data/state.json")
     if c.returncode != 0:
         print(f"[publish] commit failed: {c.stderr.strip()}", file=sys.stderr)
-        return
+        return False
     p = git("push")
     if p.returncode != 0:
         print(f"[publish] push failed: {p.stderr.strip()}", file=sys.stderr)
-        return
+        return False
     print("[publish] pushed data/state.json", file=sys.stderr)
+    return True
 
 def _load_prior():
     if os.path.exists(STATE_PATH):
@@ -307,8 +313,10 @@ def main(argv=None):
     # concise summary lines to stdout for the cron caller to forward to Discord
     for line in summary:
         print(line)
-    if do_publish:
-        publish(f"data: fare update {now_iso}")
+    if do_publish and not publish(f"data: fare update {now_iso}"):
+        # the local state.json was written, but it never reached the dashboard —
+        # exit non-zero so cron/monitoring can retry or alert.
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
