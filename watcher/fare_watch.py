@@ -226,30 +226,31 @@ def summarize(cfg, state, now_iso=None):
     valid = [x for x in state.get("observations", []) if isinstance(x.get("price_total_usd"), (int, float))]
     if not valid:
         lines.append("No priced nonstop results yet.")
-        return lines
-    latest_ts = max(x["checked_at"] for x in valid)
-    has_fresh = any(x["checked_at"] == now_iso for x in valid) if now_iso is not None else False
-    report_ts = now_iso if has_fresh else latest_ts
-    run_obs = sorted((x for x in valid if x["checked_at"] == report_ts), key=lambda x: x["price_total_usd"])
-    per = " · ".join(f"{x['airport']} ${x['price_total_usd']:,} ({x.get('google_price_band') or '-'})"
-                          for x in run_obs)
-    cur, best = stats.get("current_price_total_usd"), stats.get("best_price_total_usd")
-    lines.append(f"{per}  →  best ${cur:,} via {stats.get('last_airport')}")
-    gft = cfg["good_fare_total"]
-    if isinstance(cur, (int, float)):
-        delta = cur - gft
-        tail = f"${delta:,} over target" if delta > 0 else "at/below target ✅"
-        lines.append(f"lowest observed ${best:,} · target ${gft:,} ({tail})")
-    if now_iso is None or has_fresh:                 # only alert on fresh rows (or a manual re-print)
-        flagged = [x for x in run_obs if x.get("alert")]
-        if flagged:
-            f = flagged[0]
-            why = []
-            if f.get("materially_good_fare"): why.append("good fare")
-            if f.get("material_price_drop"): why.append("material drop")
-            lines.append(f"\U0001f6a8 ALERT {f['airport']} ${f['price_total_usd']:,} — {' & '.join(why)}")
-    elif now_iso is not None:
-        lines.append(f"⚠️ no fresh fares this run; showing last recorded {latest_ts}")
+    else:
+        latest_ts = max(x["checked_at"] for x in valid)
+        has_fresh = any(x["checked_at"] == now_iso for x in valid) if now_iso is not None else False
+        report_ts = now_iso if has_fresh else latest_ts
+        run_obs = sorted((x for x in valid if x["checked_at"] == report_ts), key=lambda x: x["price_total_usd"])
+        per = " · ".join(f"{x['airport']} ${x['price_total_usd']:,} ({x.get('google_price_band') or '-'})"
+                              for x in run_obs)
+        cur, best = stats.get("current_price_total_usd"), stats.get("best_price_total_usd")
+        lines.append(f"{per}  →  best ${cur:,} via {stats.get('last_airport')}")
+        gft = cfg["good_fare_total"]
+        if isinstance(cur, (int, float)):
+            delta = cur - gft
+            tail = f"${delta:,} over target" if delta > 0 else "at/below target ✅"
+            lines.append(f"lowest observed ${best:,} · target ${gft:,} ({tail})")
+        if now_iso is None or has_fresh:             # only alert on fresh rows (or a manual re-print)
+            flagged = [x for x in run_obs if x.get("alert")]
+            if flagged:
+                f = flagged[0]
+                why = []
+                if f.get("materially_good_fare"): why.append("good fare")
+                if f.get("material_price_drop"): why.append("material drop")
+                lines.append(f"\U0001f6a8 ALERT {f['airport']} ${f['price_total_usd']:,} — {' & '.join(why)}")
+        elif now_iso is not None:
+            lines.append(f"⚠️ no fresh fares this run; showing last recorded {latest_ts}")
+    # always surface a degraded run, even when there are no observations at all
     if state.get("status") == "degraded":
         lines.append(f"⚠️ degraded run (consecutive_errors={stats.get('consecutive_errors')})")
     return lines

@@ -161,6 +161,21 @@ def test_summary_suppresses_stale_alert_on_all_failure_run():
     assert "no fresh fares this run" in joined and "degraded" in joined
 
 
+def test_summary_shows_degraded_when_no_observations():
+    """A first run that records nothing (HND fails) must still surface the degraded line."""
+    def fail(c, airport, now):
+        raise RuntimeError("down")
+    orig, fw.search_airport = fw.search_airport, fail
+    try:
+        state, new_obs, info = fw.run(cfg, {"observations": []}, T2)  # empty prior, everything fails
+    finally:
+        fw.search_airport = orig
+    assert new_obs == [] and state["status"] == "degraded"
+    joined = "\n".join(fw.summarize(cfg, state, now_iso=T2))
+    assert "No priced nonstop results yet." in joined
+    assert "degraded" in joined and "consecutive_errors=1" in joined
+
+
 def test_source_url_built_and_preserved():
     u = fw.search_url(cfg, "HND")
     assert u.startswith("https://www.google.com/travel/flights/search?q=")
