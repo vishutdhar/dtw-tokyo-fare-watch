@@ -386,7 +386,8 @@ async function main() {
     else setTrend('currentTrend', 'flat', 'unchanged vs prior check');
   }
   const aboveLowest = current - lowest;
-  setTrend('lowestTrend', aboveLowest > 0 ? 'up' : 'flat', aboveLowest > 0 ? `${money(aboveLowest)} above current` : 'current matches lowest');
+  if (aboveLowest > 0) setTrend('lowestTrend', 'flat', `current ${money(aboveLowest)} above`);
+  else setTrend('lowestTrend', 'down', 'current is at the low');
   const deltaToTarget = current - GOOD_FARE_TOTAL;
   document.getElementById('targetNote').textContent = deltaToTarget > 0 ? `${money(deltaToTarget)} above target.` : 'At or below target.';
   if (Number.isFinite(deltaToTarget)) {
@@ -433,9 +434,9 @@ async function main() {
   new Chart(ctx, {
     type: 'line',
     data: { labels, datasets: [
-      { label: 'Observed fare', data: prices, borderColor:'#67e8f9', backgroundColor:'rgba(103,232,249,.12)', pointBackgroundColor:'#f7f8f8', pointBorderColor:'#67e8f9', pointRadius:changePoints, pointHoverRadius:6, tension:.18, fill:true, borderWidth:3 },
+      { label: 'Observed fare', data: prices, borderColor:'#67e8f9', pointBackgroundColor:'#f7f8f8', pointBorderColor:'#67e8f9', pointRadius:changePoints, pointHoverRadius:6, tension:.18, fill:false, borderWidth:3 },
       { label: 'Lowest observed', data: bestLine, borderColor:'#25d695', borderDash:[5,5], pointRadius:0, tension:0, borderWidth:1.5 },
-      { label: 'Good-fare target', data: targetLine, borderColor:'#7c7aff', backgroundColor:'rgba(124,122,255,.07)', borderDash:[2,6], pointRadius:0, tension:0, borderWidth:1.5, fill:'start' }
+      { label: 'Good-fare zone (≤ target)', data: targetLine, borderColor:'#7c7aff', backgroundColor:'rgba(124,122,255,.12)', borderDash:[6,4], pointRadius:0, tension:0, borderWidth:1.5, fill:'start' }
     ]},
     options: {
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
