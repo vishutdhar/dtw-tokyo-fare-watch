@@ -278,6 +278,7 @@
       <div class="panel-head"><div><h2>Readout</h2><p class="panel-copy">Current route assumptions and signal interpretation.</p></div></div>
       <div class="insight-list">
         <div class="insight"><strong>Route</strong><span id="routeReadout">—</span></div>
+        <div class="insight" id="airportInsight" hidden><strong>By airport</strong><span id="airportBreakdown">—</span></div>
         <div class="insight"><strong>Drop status</strong><span id="dropReadout">—</span></div>
         <div class="insight"><strong>Caveat</strong><span>Search URL is not a booking link. Prices and availability can change. No booking or purchase action is taken.</span></div>
       </div>
@@ -371,7 +372,7 @@ async function main() {
   document.getElementById('targetFare').textContent = money(GOOD_FARE_TOTAL);
   document.getElementById('observations').textContent = String(stats.observation_count ?? obs.length); unskeleton('observations');
   document.getElementById('lastChecked').textContent = `Last checked ${fmtDate(stats.last_checked_at)}${timeAgo(stats.last_checked_at) ? ` · ${timeAgo(stats.last_checked_at)}` : ''}`;
-  document.getElementById('currentNote').textContent = `${latest.carrier || stats.last_carrier || 'Unknown carrier'} · ${latest.duration || 'duration unknown'}`;
+  document.getElementById('currentNote').textContent = `via ${latest.airport || stats.last_airport || destAirport} · ${latest.carrier || stats.last_carrier || 'Unknown carrier'} · ${latest.duration || 'duration unknown'}`;
   document.getElementById('lowestNote').textContent = stats.best_observed_at ? `Observed ${fmtDate(stats.best_observed_at)}` : 'Since watcher baseline.';
 
   // Metric trends (lower fare is good → down = green)
@@ -418,12 +419,29 @@ async function main() {
     document.getElementById('footer').textContent = 'No fare observations available yet.';
     return;
   }
-  const labels = obs.map(o => shortDate(o.checked_at));
-  const prices = obs.map(o => Number(o.price_total_usd));
-  const bestLine = prices.map(() => Number(stats.best_price_total_usd));
-  const targetLine = prices.map(() => GOOD_FARE_TOTAL);
-  // Only mark points where the fare actually changed, so a held fare reads as a held line, not noise
-  const changePoints = prices.map((p, i) => (i === 0 || p !== prices[i - 1] || i === prices.length - 1) ? 4 : 0);
+  // Multi-airport aware: shared time axis, one observed-fare line per airport (HND, NRT, …).
+  const AIRPORT_COLORS = { HND:'#67e8f9', NRT:'#f4bf50', NGO:'#fb7185', KIX:'#a78bfa' };
+  const palette = ['#67e8f9','#f4bf50','#fb7185','#a78bfa','#25d695'];
+  const airports = [...new Set(obs.map(o => o.airport || '—'))];
+  const times = [...new Set(obs.map(o => o.checked_at))].sort((a, b) => new Date(a) - new Date(b));
+  const labels = times.map(shortDate);
+  const priceAt = {};
+  obs.forEach(o => { const a = o.airport || '—'; (priceAt[a] = priceAt[a] || {})[o.checked_at] = Number(o.price_total_usd); });
+  const allPrices = obs.map(o => Number(o.price_total_usd));
+  const airportDatasets = airports.map((a, i) => {
+    const data = times.map(t => (a in priceAt && t in priceAt[a]) ? priceAt[a][t] : null);
+    const color = AIRPORT_COLORS[a] || palette[i % palette.length];
+    // mark only points where this airport's fare changed (held fare reads as a held line)
+    const radius = data.map((p, idx) => {
+      if (p == null) return 0;
+      let prev = null; for (let k = idx - 1; k >= 0; k--) if (data[k] != null) { prev = data[k]; break; }
+      let isLast = true; for (let k = idx + 1; k < data.length; k++) if (data[k] != null) { isLast = false; break; }
+      return (prev === null || p !== prev || isLast) ? 4 : 0;
+    });
+    return { label: airports.length > 1 ? `${a} fare` : 'Observed fare', data, borderColor:color, pointBackgroundColor:'#f7f8f8', pointBorderColor:color, pointRadius:radius, pointHoverRadius:6, tension:.18, fill:false, borderWidth:3, spanGaps:true };
+  });
+  const bestLine = times.map(() => Number(stats.best_price_total_usd));
+  const targetLine = times.map(() => GOOD_FARE_TOTAL);
   if (chartSkeleton) chartSkeleton.style.display = 'none';
   // Isolate chart rendering: a Chart.js failure (e.g. blocked CDN) must not
   // discard the already-loaded metrics, table, or footer.
@@ -432,19 +450,31 @@ async function main() {
   new Chart(ctx, {
     type: 'line',
     data: { labels, datasets: [
-      { label: 'Observed fare', data: prices, borderColor:'#67e8f9', pointBackgroundColor:'#f7f8f8', pointBorderColor:'#67e8f9', pointRadius:changePoints, pointHoverRadius:6, tension:.18, fill:false, borderWidth:3 },
+      ...airportDatasets,
       { label: 'Lowest observed', data: bestLine, borderColor:'#25d695', borderDash:[5,5], pointRadius:0, tension:0, borderWidth:1.5 },
       { label: 'Good-fare zone (≤ target)', data: targetLine, borderColor:'#7c7aff', backgroundColor:'rgba(124,122,255,.12)', borderDash:[6,4], pointRadius:0, tension:0, borderWidth:1.5, fill:'start' }
     ]},
     options: {
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
-      plugins:{ legend:{ labels:{ color:'#d0d6e0', boxWidth:12, boxHeight:12, usePointStyle:true }}, tooltip:{ backgroundColor:'#191a1b', borderColor:'rgba(255,255,255,.12)', borderWidth:1, titleColor:'#f7f8f8', bodyColor:'#d0d6e0', callbacks:{ label: c => `${c.dataset.label}: ${money(c.raw)}` }}},
-      scales:{ x:{ ticks:{ color:'#8a8f98', maxRotation:0, autoSkip:true }, grid:{ color:'rgba(255,255,255,.045)' }}, y:{ ticks:{ color:'#8a8f98', callback:v => money(v) }, grid:{ color:'rgba(255,255,255,.06)' }, suggestedMin: Math.max(0, Math.min(...prices, GOOD_FARE_TOTAL) - 400), suggestedMax: Math.max(...prices, GOOD_FARE_TOTAL) + 400 } }
+      plugins:{ legend:{ labels:{ color:'#d0d6e0', boxWidth:12, boxHeight:12, usePointStyle:true }}, tooltip:{ backgroundColor:'#191a1b', borderColor:'rgba(255,255,255,.12)', borderWidth:1, titleColor:'#f7f8f8', bodyColor:'#d0d6e0', callbacks:{ label: c => c.raw == null ? null : `${c.dataset.label}: ${money(c.raw)}` }}},
+      scales:{ x:{ ticks:{ color:'#8a8f98', maxRotation:0, autoSkip:true }, grid:{ color:'rgba(255,255,255,.045)' }}, y:{ ticks:{ color:'#8a8f98', callback:v => money(v) }, grid:{ color:'rgba(255,255,255,.06)' }, suggestedMin: Math.max(0, Math.min(...allPrices, GOOD_FARE_TOTAL) - 400), suggestedMax: Math.max(...allPrices, GOOD_FARE_TOTAL) + 400 } }
     }
   });
   } catch (chartErr) {
     const wrap = document.querySelector('.chart-wrap');
     if (wrap) wrap.innerHTML = `<div class="error">Chart unavailable: ${chartErr.message || chartErr}</div>`;
+  }
+  // When more than one Tokyo airport is tracked, surface each airport's latest fare, cheapest first.
+  if (airports.length > 1) {
+    const latestByAirport = airports.map(a => {
+      const aObs = obs.filter(o => (o.airport || '—') === a);
+      const last = aObs[aObs.length - 1];
+      return { airport: a, price: Number(last.price_total_usd) };
+    }).sort((x, y) => x.price - y.price);
+    document.getElementById('airportBreakdown').innerHTML =
+      latestByAirport.map((x, i) => `${x.airport} <strong style="color:var(--text)">${money(x.price)}</strong>${i === 0 ? ' · cheapest' : ''}`).join(' &nbsp;·&nbsp; ');
+    document.getElementById('airportInsight').hidden = false;
+    document.querySelector('.dashboard-grid .panel-copy').textContent = 'Observed total fare per watcher run — one line per Tokyo airport tracked.';
   }
   document.getElementById('recentRows').innerHTML = obs.slice().reverse().map(o => {
     const b = o.google_price_band || '—';
