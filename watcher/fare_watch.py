@@ -113,12 +113,12 @@ def recompute(cfg, observations):
         seen_prev[a] = price
     if not valid:
         return {"observation_count": len(observations), "consecutive_errors": 0}
-    # latest observation per airport -> cheapest of those = "current best"
-    latest_by_airport = {}
-    for o in valid:
-        latest_by_airport[o["airport"]] = o  # valid is in chronological order
-    current = min(latest_by_airport.values(), key=lambda o: o["price_total_usd"])
-    best = min(valid, key=lambda o: o["price_total_usd"])
+    # "current" reflects only the most recent run (max checked_at), so an airport
+    # skipped this run never lingers as current via a stale, cheaper historical row.
+    latest_ts = max(o["checked_at"] for o in valid)
+    current_pool = [o for o in valid if o["checked_at"] == latest_ts]
+    current = min(current_pool, key=lambda o: o["price_total_usd"])
+    best = min(valid, key=lambda o: o["price_total_usd"])  # lowest-ever, any run/airport
     return {
         "current_price_total_usd": current["price_total_usd"],
         "best_price_total_usd": best["price_total_usd"],
@@ -126,7 +126,7 @@ def recompute(cfg, observations):
         "last_airport": current["airport"],
         "last_carrier": current["carrier"],
         "last_google_price_band": current["google_price_band"],
-        "last_checked_at": max(o["checked_at"] for o in valid),
+        "last_checked_at": latest_ts,
         "observation_count": len(observations),
     }
 

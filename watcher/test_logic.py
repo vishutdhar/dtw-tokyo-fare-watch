@@ -67,6 +67,21 @@ def test_nonstop_skip_is_not_an_error():
     assert state["stats"]["last_airport"] == "HND"
 
 
+def test_skipped_airport_not_treated_as_current():
+    """An airport skipped in the latest run must not surface as current via a stale row."""
+    t1, t2 = "2026-06-25T12:00:00+00:00", "2026-06-25T14:00:00+00:00"
+    obs = [
+        fw.build_observation(cfg, "NRT", MockFlight("Delta", "$2,800"), "low", t1),   # old, cheap NRT
+        fw.build_observation(cfg, "HND", MockFlight("Delta", "$4,100"), "high", t1),
+        fw.build_observation(cfg, "HND", MockFlight("Delta", "$4,000"), "high", t2),  # latest run: HND only
+    ]
+    stats = fw.recompute(cfg, obs)
+    assert stats["current_price_total_usd"] == 4000, stats   # not the stale 2800
+    assert stats["last_airport"] == "HND", stats
+    assert stats["best_price_total_usd"] == 2800             # lowest-ever still records it
+    assert stats["last_checked_at"] == t2
+
+
 def test_source_url_built_and_preserved():
     u = fw.search_url(cfg, "HND")
     assert u.startswith("https://www.google.com/travel/flights/search?q=")

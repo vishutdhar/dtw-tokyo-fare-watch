@@ -360,14 +360,14 @@ async function main() {
   const stats = state.stats || {};
   const obs = (state.observations || []).filter(o => Number.isFinite(Number(o.price_total_usd)));
   const latest = obs[obs.length - 1] || {};
-  // Cheapest currently-available flight across all tracked airports — drives the
-  // "Current best total" card so its price, via-airport, route and trends always
-  // agree, regardless of the order the backend appends per-airport rows.
+  // Cheapest flight from the most recent run — drives the "Current best total"
+  // card so its price, via-airport, route and trends always agree, and an airport
+  // skipped in the latest run never lingers as current via a stale cheaper row.
   const airports = [...new Set(obs.map(o => o.airport || '—'))];
-  const latestPerAirport = airports
-    .map(a => obs.filter(o => (o.airport || '—') === a).pop()).filter(Boolean);
-  const currentBest = latestPerAirport.length
-    ? latestPerAirport.reduce((m, o) => Number(o.price_total_usd) < Number(m.price_total_usd) ? o : m)
+  const latestTs = obs.length ? Math.max(...obs.map(o => new Date(o.checked_at).getTime())) : NaN;
+  const currentPool = obs.filter(o => new Date(o.checked_at).getTime() === latestTs);
+  const currentBest = currentPool.length
+    ? currentPool.reduce((m, o) => Number(o.price_total_usd) < Number(m.price_total_usd) ? o : m)
     : latest;
   const dates = watch.dates || {};
   const source = currentBest.source_url || latest.source_url || state.source_url;
@@ -479,15 +479,14 @@ async function main() {
     const wrap = document.querySelector('.chart-wrap');
     if (wrap) wrap.innerHTML = `<div class="error">Chart unavailable: ${chartErr.message || chartErr}</div>`;
   }
-  // When more than one Tokyo airport is tracked, surface each airport's latest fare, cheapest first.
-  if (airports.length > 1) {
-    const latestByAirport = airports.map(a => {
-      const aObs = obs.filter(o => (o.airport || '—') === a);
-      const last = aObs[aObs.length - 1];
-      return { airport: a, price: Number(last.price_total_usd) };
-    }).sort((x, y) => x.price - y.price);
+  // When the latest run priced more than one Tokyo airport, surface each one's
+  // current fare, cheapest first (from this run only — skipped airports excluded).
+  const runByAirport = currentPool
+    .map(o => ({ airport: o.airport || '—', price: Number(o.price_total_usd) }))
+    .sort((x, y) => x.price - y.price);
+  if (runByAirport.length > 1) {
     document.getElementById('airportBreakdown').innerHTML =
-      latestByAirport.map((x, i) => `${x.airport} <strong style="color:var(--text)">${money(x.price)}</strong>${i === 0 ? ' · cheapest' : ''}`).join(' &nbsp;·&nbsp; ');
+      runByAirport.map((x, i) => `${x.airport} <strong style="color:var(--text)">${money(x.price)}</strong>${i === 0 ? ' · cheapest' : ''}`).join(' &nbsp;·&nbsp; ');
     document.getElementById('airportInsight').hidden = false;
     document.querySelector('.dashboard-grid .panel-copy').textContent = 'Observed total fare per watcher run — one line per Tokyo airport tracked.';
   }
