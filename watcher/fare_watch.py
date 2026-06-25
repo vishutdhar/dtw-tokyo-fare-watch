@@ -5,32 +5,45 @@ Searches each configured Tokyo airport (HND, NRT) on Google Flights via the
 `fast-flights` library and writes the dashboard's data/state.json. Records only;
 it does not book, hold, or modify any reservation.
 
-Run from cron, e.g.:  python3 watcher/fare_watch.py
-Dry run (no writes):  python3 watcher/fare_watch.py --dry-run
+Usage:
+  python3 watcher/fare_watch.py               # search, write state.json, print summary, publish
+  python3 watcher/fare_watch.py --dry-run     # print state.json + summary; write nothing, publish nothing
+  python3 watcher/fare_watch.py --no-publish  # write state.json but do NOT git commit/push
+  python3 watcher/fare_watch.py --summary-only # just print the summary from the existing state.json
 
-Scope notes (per maintainer guidance):
+Behavior notes (per maintainer guidance):
 - Nonstop/direct only — connecting flights are never recorded.
-- Writes data/state.json only; it does NOT send Discord alerts or touch cron.
-  Whatever consumes the alert flags (e.g. Hermes -> Discord) keeps its semantics
-  as long as those flags are preserved, which they are.
-- GOOD_FARE_TOTAL / MATERIAL_DROP thresholds below drive the alert flags; confirm
-  they match the existing Hermes values before pointing live cron at this copy.
+- Partial failure is tolerated: if a non-required airport (e.g. NRT) fails while a
+  required airport (HND) succeeds, the run is NOT marked degraded and the error
+  streak does not advance.
+- Writes data/state.json only. The optional publish step commits ONLY that file
+  (never index.html or anything else). It does not post to Discord — it prints
+  concise summary lines on stdout for the cron caller to forward.
+- Alert thresholds below are meant to match the existing Hermes semantics:
+  good fare at/below $3,000; "material" drop = down >= $100 AND >= 5% vs the prior
+  same-airport check. Confirm against Hermes before pointing live cron here.
 """
 from __future__ import annotations
-import json, os, re, sys
+import json, os, re, subprocess, sys
 from datetime import datetime, timezone
 
 # ---- config -----------------------------------------------------------------
 CONFIG = {
     "origin": "DTW",
     "destination": "Tokyo",
-    "airports": ["HND", "NRT"],          # add/remove Tokyo airports here
+    "airports": ["HND", "NRT"],          # all tracked Tokyo airports
+    "required_airports": ["HND"],        # a run is "degraded" only if one of these fails
     "dates": {"depart": "2026-11-20", "return": "2026-11-29"},
     "adults": 2,
     "seat": "economy",
     "nonstop_direct_only": True,
-    "good_fare_total": 3000,             # alert at/below this total
-    "material_drop_usd": 150,            # "material" drop threshold vs prior same-airport check
+    # fast-flights fetch mode. If the hosted "fallback" returns 401 "no token
+    # provided", try "local" (needs Playwright installed) or "common".
+    "fetch_mode": "fallback",
+    # alert semantics (match Hermes):
+    "good_fare_total": 3000,             # good fare at/below this total
+    "material_min_drop_usd": 100,        # material drop = down >= $100 ...
+    "material_min_drop_pct": 0.05,       # ... AND down >= 5% vs the prior same-airport check
 }
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_PATH = os.path.join(REPO_ROOT, "data", "state.json")
@@ -59,7 +72,7 @@ def search_airport(cfg, airport, now_iso):
 
     Returns an observation dict, or None when there is no valid nonstop/direct
     priced result (we never substitute a connecting flight). Raises only on an
-    actual fetch error (counted as a backend error by the caller).
+    actual fetch error (handled as a per-airport failure by the caller).
     """
     from fast_flights import FlightData, Passengers, get_flights  # lazy import so tests don't need it
     o, dates = cfg["origin"], cfg["dates"]
@@ -68,7 +81,8 @@ def search_airport(cfg, airport, now_iso):
         FlightData(date=dates["return"], from_airport=airport, to_airport=o, max_stops=0),
     ]
     res = get_flights(flight_data=legs, trip="round-trip", seat=cfg["seat"],
-                      passengers=Passengers(adults=cfg["adults"]), fetch_mode="fallback")
+                      passengers=Passengers(adults=cfg["adults"]),
+                      fetch_mode=cfg.get("fetch_mode", "fallback"))
     # Strictly nonstop, with a parseable price. No fallback to connecting flights.
     nonstop = [f for f in res.flights
                if getattr(f, "stops", 0) in (0, None) and _money_to_int(getattr(f, "price", None))]
@@ -98,7 +112,9 @@ def build_observation(cfg, airport, flight, price_band, now_iso, source_url=None
 def recompute(cfg, observations):
     """Pure: given the full observation history (with this run's rows appended),
     set per-observation alert flags and return the aggregate stats block."""
-    good = cfg["good_fare_total"]; material = cfg["material_drop_usd"]
+    good = cfg["good_fare_total"]
+    min_usd = cfg.get("material_min_drop_usd", 100)
+    min_pct = cfg.get("material_min_drop_pct", 0.05)
     valid = [o for o in observations if isinstance(o.get("price_total_usd"), (int, float))]
     # per-observation signals: compare each obs to the previous obs of the SAME airport
     seen_prev = {}
@@ -106,8 +122,10 @@ def recompute(cfg, observations):
         a = o.get("airport")
         prev = seen_prev.get(a)
         price = o["price_total_usd"]
+        drop = (prev - price) if prev is not None else 0
         o["price_dropped"] = bool(prev is not None and price < prev)
-        o["material_price_drop"] = bool(prev is not None and (prev - price) >= material)
+        # "material" = down by at least $min_usd AND at least min_pct of the prior fare
+        o["material_price_drop"] = bool(prev is not None and drop >= min_usd and drop >= min_pct * prev)
         o["materially_good_fare"] = bool(price <= good)
         o["alert"] = bool(o["material_price_drop"] or o["materially_good_fare"])
         seen_prev[a] = price
@@ -130,13 +148,13 @@ def recompute(cfg, observations):
         "observation_count": len(observations),
     }
 
-def build_state(cfg, prior_state, new_observations, now_iso, errors=0):
+def build_state(cfg, prior_state, new_observations, now_iso, consecutive_errors=0, degraded=False):
     """Pure: merge new observations into prior state and rebuild the file."""
     observations = list(prior_state.get("observations", [])) + list(new_observations)
     stats = recompute(cfg, observations)
-    stats["consecutive_errors"] = errors
+    stats["consecutive_errors"] = consecutive_errors
     # Keep the fare-search links alive: newest observation with a URL, else the
-    # prior state's, else any observation's — never null them out on a quiet run.
+    # prior state's — never null them out on a quiet run.
     top_source = (next((o.get("source_url") for o in reversed(observations) if o.get("source_url")), None)
                   or prior_state.get("source_url"))
     return {
@@ -146,7 +164,7 @@ def build_state(cfg, prior_state, new_observations, now_iso, errors=0):
         "observations": observations,
         "source_url": top_source,
         "stats": stats,
-        "status": "ok" if errors == 0 else "degraded",
+        "status": "degraded" if degraded else "ok",
         "watch": {
             "adults": cfg["adults"],
             "dates": cfg["dates"],
@@ -161,47 +179,121 @@ def build_state(cfg, prior_state, new_observations, now_iso, errors=0):
     }
 
 def run(cfg, prior, now_iso):
-    """Search every configured airport and return (state, new_obs, errors)."""
-    new_obs, errors = [], 0
+    """Search every airport, tolerating partial failure.
+
+    Returns (state, new_obs, info). A run is "degraded" only when a *required*
+    airport hard-fails; an optional airport failing (or returning no nonstop
+    result) is recorded but never advances the error streak.
+    """
+    new_obs, errored = [], []
     for airport in cfg["airports"]:
         try:
             obs = search_airport(cfg, airport, now_iso)
-        except Exception as exc:  # a real fetch error — one airport failing shouldn't abort
-            errors += 1
+        except Exception as exc:  # a real fetch error (e.g. fast-flights 401)
+            errored.append(airport)
             print(f"[warn] {airport} search failed: {exc}", file=sys.stderr)
             continue
         if obs is None:           # no valid nonstop/direct result — skip, not an error
             print(f"[info] {airport}: no nonstop/direct priced result this run; skipped.", file=sys.stderr)
             continue
         new_obs.append(obs)
-    if not new_obs and errors:    # nothing recorded and at least one hard failure → carry the streak
-        errors += prior.get("stats", {}).get("consecutive_errors", 0)
-    state = build_state(cfg, prior, new_obs, now_iso, errors=errors)
-    return state, new_obs, errors
+    required = set(cfg.get("required_airports") or [cfg["airports"][0]])
+    degraded = bool(required & set(errored))     # a required airport hard-failed
+    prior_streak = prior.get("stats", {}).get("consecutive_errors", 0)
+    consecutive_errors = (prior_streak + 1) if degraded else 0
+    state = build_state(cfg, prior, new_obs, now_iso,
+                        consecutive_errors=consecutive_errors, degraded=degraded)
+    info = {"new": len(new_obs), "errored": errored, "degraded": degraded}
+    return state, new_obs, info
+
+def summarize(cfg, state):
+    """Concise, Discord-ready summary lines for the cron caller to forward.
+
+    Neutral status every run; a strong ALERT line only on a material drop or a
+    good fare (mirrors the existing Hermes posture)."""
+    stats = state.get("stats", {})
+    o, d = cfg["origin"], cfg["dates"]
+    lines = [f"{o} ⇄ Tokyo {d['depart']} → {d['return']} · "
+             f"{cfg['adults']} adults · {cfg['seat']} · nonstop"]
+    valid = [x for x in state.get("observations", []) if isinstance(x.get("price_total_usd"), (int, float))]
+    if not valid:
+        lines.append("No priced nonstop results yet.")
+        return lines
+    latest_ts = max(x["checked_at"] for x in valid)
+    run_obs = sorted((x for x in valid if x["checked_at"] == latest_ts), key=lambda x: x["price_total_usd"])
+    per = " · ".join(f"{x['airport']} ${x['price_total_usd']:,} ({x.get('google_price_band') or '-'})"
+                          for x in run_obs)
+    cur, best = stats.get("current_price_total_usd"), stats.get("best_price_total_usd")
+    lines.append(f"{per}  →  best ${cur:,} via {stats.get('last_airport')}")
+    gft = cfg["good_fare_total"]
+    if isinstance(cur, (int, float)):
+        delta = cur - gft
+        tail = f"${delta:,} over target" if delta > 0 else "at/below target ✅"
+        lines.append(f"lowest observed ${best:,} · target ${gft:,} ({tail})")
+    flagged = [x for x in run_obs if x.get("alert")]
+    if flagged:
+        f = flagged[0]
+        why = []
+        if f.get("materially_good_fare"): why.append("good fare")
+        if f.get("material_price_drop"): why.append("material drop")
+        lines.append(f"\U0001f6a8 ALERT {f['airport']} ${f['price_total_usd']:,} — {' & '.join(why)}")
+    if state.get("status") == "degraded":
+        lines.append(f"⚠️ degraded run (consecutive_errors={stats.get('consecutive_errors')})")
+    return lines
+
+def publish(commit_msg):
+    """Commit & push ONLY data/state.json (never index.html or anything else)."""
+    def git(*args):
+        return subprocess.run(["git", "-C", REPO_ROOT, *args], capture_output=True, text=True)
+    git("add", "--", "data/state.json")
+    if git("diff", "--cached", "--quiet", "--", "data/state.json").returncode == 0:
+        print("[publish] no data change to commit", file=sys.stderr)
+        return
+    c = git("commit", "-m", commit_msg)
+    if c.returncode != 0:
+        print(f"[publish] commit failed: {c.stderr.strip()}", file=sys.stderr)
+        return
+    p = git("push")
+    if p.returncode != 0:
+        print(f"[publish] push failed: {p.stderr.strip()}", file=sys.stderr)
+        return
+    print("[publish] pushed data/state.json", file=sys.stderr)
+
+def _load_prior():
+    if os.path.exists(STATE_PATH):
+        with open(STATE_PATH) as fh:
+            return json.load(fh)
+    return {}
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     dry_run = "--dry-run" in argv
+    do_publish = ("--no-publish" not in argv) and not dry_run
+    prior = _load_prior()
+    if "--summary-only" in argv:
+        for line in summarize(CONFIG, prior):
+            print(line)
+        return
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-    prior = {}
-    if os.path.exists(STATE_PATH):
-        with open(STATE_PATH) as fh:
-            prior = json.load(fh)
-    state, new_obs, errors = run(CONFIG, prior, now_iso)
+    state, new_obs, info = run(CONFIG, prior, now_iso)
     payload = json.dumps(state, indent=2, sort_keys=True)
+    summary = summarize(CONFIG, state)
     if dry_run:
-        # Show what would be written; touch nothing.
         print(payload)
-        print(f"[dry-run] {len(new_obs)} new obs; "
-              f"current={state['stats'].get('current_price_total_usd')} "
-              f"via {state['stats'].get('last_airport')}; errors={errors}", file=sys.stderr)
+        print("\n--- summary (cron/Discord) ---", file=sys.stderr)
+        for line in summary:
+            print(line, file=sys.stderr)
+        print(f"[dry-run] new={info['new']} errored={info['errored']} "
+              f"degraded={info['degraded']}; wrote nothing", file=sys.stderr)
         return
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
     with open(STATE_PATH, "w") as fh:
         fh.write(payload + "\n")
-    print(f"Wrote {STATE_PATH}: {len(new_obs)} new obs, "
-          f"current={state['stats'].get('current_price_total_usd')} "
-          f"via {state['stats'].get('last_airport')}")
+    # concise summary lines to stdout for the cron caller to forward to Discord
+    for line in summary:
+        print(line)
+    if do_publish:
+        publish(f"data: fare update {now_iso}")
 
 if __name__ == "__main__":
     main()
