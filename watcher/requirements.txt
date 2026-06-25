@@ -1,0 +1,2 @@
+# v2 API (FlightData / get_flights). v3 changed to FlightQuery/create_query.
+fast-flights>=2.2,<3
