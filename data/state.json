@@ -6,7 +6,7 @@
     "no booking or purchase action"
   ],
   "dashboard_url": "https://vishutdhar.github.io/dtw-tokyo-fare-watch/",
-  "generated_at": "2026-06-30T05:21:07+00:00",
+  "generated_at": "2026-06-30T08:21:26+00:00",
   "observations": [
     {
       "airport": "HND",
@@ -1367,6 +1367,23 @@
       "price_dropped": false,
       "price_total_usd": 4030,
       "source_url": "https://www.google.com/travel/flights/search?q=Google+Flights+DTW+to+HND+round+trip+2026-11-20+2026-11-29+2+adults+nonstop+economy"
+    },
+    {
+      "airport": "HND",
+      "alert": false,
+      "arrival": "5:45 PM on Sat, Nov 21",
+      "carrier": "Delta",
+      "checked_at": "2026-06-30T08:21:26+00:00",
+      "departure": "2:00 PM on Fri, Nov 20",
+      "drop_abs_usd": 0,
+      "drop_pct": 0.0,
+      "duration": "13 hr 45 min",
+      "google_price_band": "high",
+      "material_price_drop": false,
+      "materially_good_fare": false,
+      "price_dropped": false,
+      "price_total_usd": 4030,
+      "source_url": "https://www.google.com/travel/flights/search?q=Google+Flights+DTW+to+HND+round+trip+2026-11-20+2026-11-29+2+adults+nonstop+economy"
     }
   ],
   "source_url": "https://www.google.com/travel/flights/search?q=Google+Flights+DTW+to+HND+round+trip+2026-11-20+2026-11-29+2+adults+nonstop+economy",
@@ -1378,9 +1395,9 @@
     "current_price_total_usd": 4030,
     "last_airport": "HND",
     "last_carrier": "Delta",
-    "last_checked_at": "2026-06-30T05:21:07+00:00",
+    "last_checked_at": "2026-06-30T08:21:26+00:00",
     "last_google_price_band": "high",
-    "observation_count": 80
+    "observation_count": 81
   },
   "status": "ok",
   "watch": {
