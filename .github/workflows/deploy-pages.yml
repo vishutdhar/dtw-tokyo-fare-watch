@@ -1,0 +1,52 @@
+name: Deploy Pages
+
+# Replaces the built-in branch-based Pages deploy, which has no retry and
+# emails a failure on every transient "Deployment failed, try again later"
+# from the Pages backend. Retries absorb those; a genuine outage still fails.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.attempt1.outputs.page_url || steps.attempt2.outputs.page_url || steps.attempt3.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+      - name: Deploy (attempt 1)
+        id: attempt1
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - name: Wait before retry
+        if: steps.attempt1.outcome == 'failure'
+        run: sleep 60
+      - name: Deploy (attempt 2)
+        id: attempt2
+        if: steps.attempt1.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - name: Wait before final retry
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        run: sleep 180
+      - name: Deploy (attempt 3)
+        id: attempt3
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        uses: actions/deploy-pages@v5
