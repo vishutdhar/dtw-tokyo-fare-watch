@@ -22,6 +22,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Guard manual dispatch: only main may reach the production environment.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Each deploy attempt can wait up to 10m (deploy-pages default timeout);
     # worst case is 3 attempts + 4m of sleeps, so keep this above ~34m.
