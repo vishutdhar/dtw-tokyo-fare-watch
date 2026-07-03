@@ -14,9 +14,11 @@ permissions:
   pages: write
   id-token: write
 
+# cancel-in-progress must stay false: cancelling an active production deploy
+# both kills a deployment that may have succeeded and emails "Run failed".
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
