@@ -26,11 +26,11 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Each deploy attempt can wait up to 10m (deploy-pages default timeout);
-    # worst case is 3 attempts + 4m of sleeps, so keep this above ~34m.
-    timeout-minutes: 40
+    # worst case is 5 attempts + 49m of sleeps, so keep this above ~99m.
+    timeout-minutes: 110
     environment:
       name: github-pages
-      url: ${{ steps.attempt1.outputs.page_url || steps.attempt2.outputs.page_url || steps.attempt3.outputs.page_url }}
+      url: ${{ steps.attempt1.outputs.page_url || steps.attempt2.outputs.page_url || steps.attempt3.outputs.page_url || steps.attempt4.outputs.page_url || steps.attempt5.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/configure-pages@v6
@@ -49,10 +49,26 @@ jobs:
         if: steps.attempt1.outcome == 'failure'
         uses: actions/deploy-pages@v5
         continue-on-error: true
-      - name: Wait before final retry
+      - name: Wait before retry 3
         if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
-        run: sleep 180
+        run: sleep 300
       - name: Deploy (attempt 3)
         id: attempt3
         if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - name: Wait before retry 4
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure' && steps.attempt3.outcome == 'failure'
+        run: sleep 900
+      - name: Deploy (attempt 4)
+        id: attempt4
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure' && steps.attempt3.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - name: Wait before final retry
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure' && steps.attempt3.outcome == 'failure' && steps.attempt4.outcome == 'failure'
+        run: sleep 1800
+      - name: Deploy (attempt 5)
+        id: attempt5
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure' && steps.attempt3.outcome == 'failure' && steps.attempt4.outcome == 'failure'
         uses: actions/deploy-pages@v5
